@@ -1,5 +1,5 @@
 ---
-layout: single
+layout: post
 title:  "The annotated web"
 date:   2013-08-24
 ---

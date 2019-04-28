@@ -1,5 +1,5 @@
 ---
-layout: single
+layout: post
 title:  "You’re the product"
 date:   2015-10-10
 ---
