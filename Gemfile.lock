@@ -258,6 +258,7 @@ DEPENDENCIES
   html-proofer
   jekyll (~> 3.7.4)
   jekyll-feed
+  rouge
   tzinfo-data
 
 BUNDLED WITH
