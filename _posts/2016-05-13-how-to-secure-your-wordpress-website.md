@@ -33,9 +33,9 @@ Most reports we received through our bug bounty program were about content injec
 XMLRPC is a WordPress feature that can be used for [pingbacks and trackbacks](https://codex.wordpress.org/XML-RPC_Support). However, it can also be used for [DDoS attacks](https://hackerone.com/reports/96294). Since you don’t need this feature for day-to-day blogging, it’s better to turn this off. To turn XMLRPC off, add this to your theme’s functions.php:
 
 {% highlight php %}
-add_filter(‘xmlrpc_methods’, ‘remove_xmlrpc_pingback_ping’);
+add_filter('xmlrpc_methods', 'remove_xmlrpc_pingback_ping');
 function remove_xmlrpc_pingback_ping($methods) {
- unset($methods[‘pingback.ping’]);
+ unset($methods['pingback.ping']);
  return $methods;
 }
 {% endhighlight %}
