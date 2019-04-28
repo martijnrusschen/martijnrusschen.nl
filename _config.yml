@@ -26,12 +26,9 @@ github_username:  martijnrusschen
 
 # Build settings
 markdown: kramdown
-theme: minimal-mistakes-jekyll
 plugins:
   - jekyll-feed
-  - jekyll-remote-theme
 
-remote_theme: mmistakes/minimal-mistakes
 # Exclude from processing.
 # The following items will not be processed, by default. Create a custom list
 # to override the default setting.
