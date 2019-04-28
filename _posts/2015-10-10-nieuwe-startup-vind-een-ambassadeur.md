@@ -8,7 +8,7 @@ Heb je een goed idee of ben je net begonnen met je startup? Misschien is het dan
 
 Een goed voorbeeld is Blendle. Mede dankzij de bekendheid van Marten Blankensteijn en Alexander Klöpping heeft Blendle een hoop bekendheid gekregen. Zo waren ze bijvoorbeeld [te gast](http://www.youtube.com/watch?v=oid1raHVjoQ) in de Wereld Draait Door en zijn er vele artikelen geschreven over het bedrijf. Dit terwijl er genoeg andere soortgelijke initiatieven zijn. Alleen zijn deze lang niet zo bekend als Blendle.
 
-Neem bijvoorbeeld het bedrijf [Myjour](https://myjour.com/). Dit bedrijf probeert hetzelfde te doen als wat Blendle doet alleen is dit bedrijf totaal niet bekend bij de mensen. Dat is goed te zien in de onderstaande afbeelding die een weergave geeft van het aantal zoekopdrachten naar beide bedrijven.
+Neem bijvoorbeeld het bedrijf Myjour. Dit bedrijf probeert hetzelfde te doen als wat Blendle doet alleen is dit bedrijf totaal niet bekend bij de mensen. Dat is goed te zien in de onderstaande afbeelding die een weergave geeft van het aantal zoekopdrachten naar beide bedrijven.
 
 ![Blauwe lijn: Blendle, Rode lijn: Myjour](/assets/images/grafiek.png)
 
