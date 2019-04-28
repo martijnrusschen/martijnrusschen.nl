@@ -14,3 +14,5 @@ title: About
 ## Open Source projects
 
 - [React Datepicker](https://github.com/Hacker0x01/react-datepicker)
+- [SolarEdge-to-Push](https://github.com/martijnrusschen/solaredge-to-push)
+- [Alexa Qbuzz departure times](https://github.com/martijnrusschen/alexa-qbuzz-departure-times)
