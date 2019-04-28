@@ -34,6 +34,7 @@ XMLRPC is a WordPress feature that can be used for [pingbacks and trackbacks](ht
 
 {% highlight php %}
 add_filter('xmlrpc_methods', 'remove_xmlrpc_pingback_ping');
+
 function remove_xmlrpc_pingback_ping($methods) {
  unset($methods['pingback.ping']);
  return $methods;
