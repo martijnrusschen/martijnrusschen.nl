@@ -29,6 +29,7 @@ linkedin:
 
 # Build settings
 markdown: kramdown
+highlighter: rouge
 plugins:
   - jekyll-feed
 show_downloads: false

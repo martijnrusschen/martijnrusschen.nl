@@ -32,13 +32,14 @@ Most reports we received through our bug bounty program were about content injec
 ## Turn off XMLRPC
 XMLRPC is a WordPress feature that can be used for [pingbacks and trackbacks](https://codex.wordpress.org/XML-RPC_Support). However, it can also be used for [DDoS attacks](https://hackerone.com/reports/96294). Since you don’t need this feature for day-to-day blogging, it’s better to turn this off. To turn XMLRPC off, add this to your theme’s functions.php:
 
-```
-add_filter( ‘xmlrpc_methods’, ‘remove_xmlrpc_pingback_ping’ );
-function remove_xmlrpc_pingback_ping( $methods ) {
- unset( $methods[‘pingback.ping’] );
+{% highlight php %}
+add_filter('xmlrpc_methods', 'remove_xmlrpc_pingback_ping');
+
+function remove_xmlrpc_pingback_ping($methods) {
+ unset($methods['pingback.ping']);
  return $methods;
 }
-```
+{% endhighlight %}
 
 ## Keep your WordPress up-to-date
 Automattic, the company behind WordPress, runs a [bounty program for WordPress](https://hackerone.com/automattic). They are continuously resolving issues with security implications. It is important that you keep your WordPress installation up-to-date to ensure you are protected from known issues.
