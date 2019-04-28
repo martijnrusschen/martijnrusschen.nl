@@ -15,7 +15,7 @@ With modern technology, it has become feasible now to build such a system. Sever
 Recommended reading:
 
 - [David Weinberger: Too Big To Know](http://www.ethanzuckerman.com/blog/2012/01/26/david-weinberger-too-big-to-know/)
-- [Needed, Right Now, Today: Crowdsourced Fact-checking](http://fct.li/?url=http%3A%2F%2F2ohreally.wordpress.com%2F2007%2F08%2F07%2Fneeded-right-now-today-crowdsourced-fact-checking%2F&scrollto=9862)
+- [Needed, Right Now, Today: Crowdsourced Fact-checking](https://2ohreally.wordpress.com/2007/08/07/needed-right-now-today-crowdsourced-fact-checking/)
 - [Sawyer: Fact-checking helps get the truth out in open](https://www.pantagraph.com/news/opinion/columns/sawyer/sawyer-fact-checking-helps-get-truth-out-in-open/article_444362e6-6d7e-11e2-885d-0019bb2963f4.html)
 
 This post is also published on [our blog](http://blog.factlink.com/).
