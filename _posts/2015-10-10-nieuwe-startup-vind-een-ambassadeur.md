@@ -1,5 +1,5 @@
 ---
-layout: post
+layout: single
 title:  "Nieuwe startup? Vind een ambassadeur!"
 date:   2015-10-10
 ---

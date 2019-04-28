@@ -1,5 +1,5 @@
 ---
-layout: post
+layout: single
 title:  "Environment Is Everything and Other Tips For Your Open Source Project"
 date:   2016-05-13
 ---

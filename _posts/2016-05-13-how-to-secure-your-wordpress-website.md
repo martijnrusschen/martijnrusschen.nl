@@ -1,5 +1,5 @@
 ---
-layout: post
+layout: single
 title:  "How to secure your WordPress website"
 date:   2016-05-13
 ---

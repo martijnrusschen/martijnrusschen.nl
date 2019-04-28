@@ -26,9 +26,10 @@ github_username:  martijnrusschen
 
 # Build settings
 markdown: kramdown
-theme: jekyll-theme-cayman
+theme: minimal-mistakes-jekyll
 plugins:
   - jekyll-feed
+github: [metadata]
 
 # Exclude from processing.
 # The following items will not be processed, by default. Create a custom list
