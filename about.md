@@ -8,6 +8,7 @@ title: About
 - 2014-Present: [HackerOne](https://hackerone.com)
   - Software Engineer
   - Product Manager
+  - Senior Product Manager
 - 2012-2014: [Factlink](https://factlink.com)
   - Software Engineer
 
