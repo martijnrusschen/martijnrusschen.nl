@@ -13,7 +13,7 @@ Een goed voorbeeld is Blendle. Mede dankzij de bekendheid van Marten Blankenstei
 
 Neem bijvoorbeeld het bedrijf Myjour. Dit bedrijf probeert hetzelfde te doen als wat Blendle doet alleen is dit bedrijf totaal niet bekend bij de mensen. Dat is goed te zien in de onderstaande afbeelding die een weergave geeft van het aantal zoekopdrachten naar beide bedrijven.
 
-![](data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7)![](/wp-content/uploads/2022/03/grafiek.png)
+![Grafiek van de belangstelling voor Blendle en Myjour](/wp-content/uploads/2022/03/grafiek.png)
 
 Blauwe lijn: Blendle, Rode lijn: Myjour
 

@@ -50,7 +50,7 @@ Once you have the prices loaded, extract the relevant information. The prices ca
 
 Restart your Home Assistant after setting up these sensors. You should now have a sensor called `sensor.tennet_balance_price` that can be used in a graph component (see below for visualization). Your output should look like this:
 
-![](data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7)![](/wp-content/uploads/2024/06/Screenshot-2024-06-30-at-19.34.12@2x-1024x427.png)
+![Graph of the Tennet imbalance price in Home Assistant](/wp-content/uploads/2024/06/Screenshot-2024-06-30-at-19.34.12@2x-1024x427.png)
 
 Sometimes, the grid will have a major surplus or shortage of energy, indicated as “Emergency Power”. This usually results in a significant spike in imbalance prices. To monitor this, create an additional sensor:
 
