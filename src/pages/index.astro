@@ -1,0 +1,35 @@
+---
+import Base from '../layouts/Base.astro';
+import { getPosts, formatDate, categoryName } from '../lib';
+
+const posts = await getPosts();
+const years = [...new Set(posts.map((p) => p.data.date.getFullYear()))];
+---
+<Base>
+  <section class="intro">
+    <h1>Hi, I'm Martijn.</h1>
+    <p>
+      Principal Product Manager at <a href="https://hackerone.com/">HackerOne</a>. Here I write about
+      product, the web, and the home I keep automating with Home Assistant.
+    </p>
+  </section>
+
+  {years.map((y) => (
+    <section>
+      <h2 class="year">{y}</h2>
+      <ul class="post-list">
+        {posts.filter((p) => p.data.date.getFullYear() === y).map((p) => (
+          <li lang={p.data.lang}>
+            <a class="title" href={`/${p.id}/`}>{p.data.title}</a>
+            {p.data.description && <p>{p.data.description}</p>}
+            <div class="meta">
+              <time datetime={p.data.date.toISOString()}>{formatDate(p.data.date, p.data.lang)}</time>
+              {p.data.categories.map((c) => <span class="chip">{categoryName(c)}</span>)}
+              {p.data.draft && <span class="chip draft">Draft</span>}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  ))}
+</Base>

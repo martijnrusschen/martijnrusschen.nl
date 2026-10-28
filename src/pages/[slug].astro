@@ -1,0 +1,39 @@
+---
+import { getCollection, render } from 'astro:content';
+import Base from '../layouts/Base.astro';
+import { getPosts, formatDate, categoryName, readingTime } from '../lib';
+
+// Posts and pages both live at /slug/, like they did on WordPress.
+export async function getStaticPaths() {
+  const posts = await getPosts();
+  const pages = await getCollection('pages');
+  return [
+    ...posts.map((entry) => ({ params: { slug: entry.id }, props: { entry, kind: 'post' as const } })),
+    ...pages.map((entry) => ({ params: { slug: entry.id }, props: { entry, kind: 'page' as const } })),
+  ];
+}
+
+const { entry, kind } = Astro.props;
+const { Content } = await render(entry);
+const post = kind === 'post' ? (entry as Awaited<ReturnType<typeof getPosts>>[number]) : null;
+const lang = post?.data.lang ?? 'en';
+---
+<Base title={entry.data.title} description={post?.data.description} lang={lang} type={post ? 'article' : 'website'}>
+  <article>
+    <header class="article-head">
+      <h1>{entry.data.title}</h1>
+      {post && (
+        <div class="meta">
+          <time datetime={post.data.date.toISOString()}>{formatDate(post.data.date, lang)}</time>
+          <span>· {readingTime(post.body)} min read</span>
+          {post.data.categories.map((c) => <span class="chip">{categoryName(c)}</span>)}
+          {post.data.draft && <span class="chip draft">Draft</span>}
+        </div>
+      )}
+    </header>
+    <div class="prose">
+      <Content />
+    </div>
+  </article>
+  {post && <a class="back" href="/">← All writing</a>}
+</Base>

@@ -1,0 +1,9 @@
+# Old WordPress URLs
+/feed/            /rss.xml   301
+/feed             /rss.xml   301
+/category/*       /          301
+/tag/*            /          301
+/author/*         /          301
+/privacy-policy/  /          301
+/wp-admin/*       /          301
+/wp-login.php     /          301

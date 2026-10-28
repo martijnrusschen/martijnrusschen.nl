@@ -1,0 +1,13 @@
+name = "martijnrusschen-nl"
+compatibility_date = "2025-06-01"
+
+# Static site via Cloudflare Workers Static Assets, like russchenmedia. No
+# Worker code: Cloudflare serves dist/ directly. Headers live in
+# public/_headers, redirects (old WordPress URLs) in public/_redirects.
+[assets]
+directory = "./dist"
+not_found_handling = "404-page"
+html_handling = "force-trailing-slash"
+
+[observability.logs]
+enabled = true

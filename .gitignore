@@ -1,0 +1,20 @@
+# build output
+dist/
+.astro/
+.wrangler/
+
+# dependencies
+node_modules/
+
+# WordPress export (raw source for the migration, not part of the site)
+_export/
+
+# environment
+.env
+.env.production
+
+# macOS
+.DS_Store
+
+# logs
+npm-debug.log*

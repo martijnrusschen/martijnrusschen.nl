@@ -1,0 +1,81 @@
+---
+import '../styles/global.css';
+import { site } from '../lib';
+
+interface Props {
+  title?: string;
+  description?: string;
+  lang?: string;
+  type?: 'website' | 'article';
+}
+const { title, description = site.tagline, lang = 'en', type = 'website' } = Astro.props;
+const pageTitle = title ? `${title} · ${site.name}` : site.name;
+const canonical = new URL(Astro.url.pathname, site.url).href;
+const nav = [
+  { href: '/', label: 'Writing' },
+  { href: '/about/', label: 'About' },
+  { href: '/publications/', label: 'Publications' },
+  { href: '/contact/', label: 'Contact' },
+];
+const path = Astro.url.pathname;
+---
+<!doctype html>
+<html lang={lang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <link rel="alternate" type="application/rss+xml" title={site.name} href="/rss.xml" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta property="og:type" content={type} />
+    <meta property="og:title" content={title ?? site.name} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:site" content="@mrusschen" />
+    <script is:inline>
+      (() => {
+        let t;
+        try { t = localStorage.getItem('theme'); } catch {}
+        if (!t) t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        document.documentElement.dataset.theme = t;
+      })();
+    </script>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="wrap">
+        <a class="brand" href="/">{site.name}</a>
+        <nav class="site-nav" aria-label="Main">
+          {nav.map((n) => (
+            <a href={n.href} aria-current={(n.href === '/' ? path === '/' : path.startsWith(n.href)) ? 'page' : undefined}>{n.label}</a>
+          ))}
+          <button class="theme-toggle" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">◐</button>
+        </nav>
+      </div>
+    </header>
+    <main class="wrap">
+      <slot />
+    </main>
+    <footer class="site-footer">
+      <div class="wrap">
+        <span>© {new Date().getFullYear()} {site.name}</span>
+        <span class="links">
+          <a href="/rss.xml">RSS</a>
+          <a href={site.social.github}>GitHub</a>
+          <a href={site.social.linkedin}>LinkedIn</a>
+          <a href={site.social.x}>X</a>
+        </span>
+      </div>
+    </footer>
+    <script is:inline>
+      document.querySelector('.theme-toggle').addEventListener('click', () => {
+        const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+        document.documentElement.dataset.theme = t;
+        try { localStorage.setItem('theme', t); } catch {}
+      });
+    </script>
+  </body>
+</html>

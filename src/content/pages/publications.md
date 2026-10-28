@@ -1,0 +1,57 @@
+---
+title: "Publications"
+order: 2
+---
+
+- 2025
+  - [Turning Incomplete Submissions into Actionable Intelligence](https://www.hackerone.com/blog/hai-agentic-report-assistant)
+  - [Cut the Noise, Keep the Signal: The Hidden Cost of Duplicate Reports](https://www.hackerone.com/blog/smart-deduplication-agentic-ai)
+  - [When Every Minute Counts: How Agentic AI Accelerates Exposure Prioritization](https://www.hackerone.com/blog/hai-agentic-exposure-prioritization)
+  - [Agentic AI: The Future of Exposure Management](https://www.hackerone.com/blog/hai-agentic-exposure-management)
+  - [Scale Security Knowledge with Shared Hai Plays](https://www.hackerone.com/blog/shared-hai-plays)
+  - [Hai Insight Agent: The Teammate Who Remembers Every Report](https://www.hackerone.com/blog/hackerone-hai-insight-agent)
+  - [Meet Your New Security Sidekick: Hai for Smarter, Faster Support](https://www.hackerone.com/blog/meet-your-new-security-sidekick-hai-smarter-faster-support)
+  - [Secure AI by Design: HackerOne’s Approach to Data Confidentiality with Hai](https://www.hackerone.com/blog/secure-ai-design-hackerones-approach-data-confidentiality-hai)
+  - [Calculate Return on Mitigation (RoM) With Hai](https://www.hackerone.com/blog/calculate-return-mitigation-rom-hai)
+- 2024
+  - [Hai’s Latest Evolution: Intelligence, Context, and More Intuitive UX](https://www.hackerone.com/blog/hais-latest-evolution-intelligence-context-and-more-intuitive-ux)
+  - [Announcing Hai Plays: Personalize Your Playbook for Spot-On Security Advice](https://www.hackerone.com/ai/hai-plays)
+  - [How Hai Facilitates Clear and Effective Communication](https://www.hackerone.com/ai/hai-facilitates-effective-communication)
+  - [How Hai’s Report Summarization Turns Complex Data Into Actionable Insights](https://www.hackerone.com/ai/hai-report-summarization)
+  - [Introducing HackerOne’s Hai API: Revolutionize Your Workflow Automation with AI](https://www.hackerone.com/ai/hai-api)
+  - [HackerOne Spot Checks for On-Demand, Targeted Security Testing](https://www.hackerone.com/vulnerability-management/spot-checks)
+  - [Accelerate Find-to-Fix Cycles With Hai](https://www.hackerone.com/ai/accelerate-find-to-fix-hai)
+  - [Hai: The AI Assistant for Vulnerability Intelligence](https://www.hackerone.com/ai/hai-ai-assistant-vulnerability-intelligence)
+- 2023
+  - [HackerOne Assets Deep Dive: Asset Inventory](https://www.hackerone.com/vulnerability-management/hackerone-assets-deep-dive-asset-inventory)
+  - [Introducing HackerOne Assets](https://www.hackerone.com/vulnerability-management/introducing-hackerone-assets)
+- 2022
+  - [Introducing Unified HackerOne Scope Management with Burp Suite Support](https://www.hackerone.com/application-security/introducing-unified-hackerone-scope-management-burp-suite-support)
+  - [Introducing HackerOne Assets](https://www.hackerone.com/vulnerability-management/introducing-hackerone-assets-0)
+- 2021
+  - [How to Use HackerOne and PagerDuty to Identify When Vulnerabilities Need Action](https://www.hackerone.com/vulnerability-management/how-use-hackerone-and-pagerduty-identify-when-vulnerabilities-need-action)
+  - [How HackerOne and Github now work better together](https://www.hackerone.com/vulnerability-management/how-hackerone-and-github-now-work-better-together)
+- 2020
+  - [HackerOne Expands Integrations Ecosystem to Connect and Defend Customers](https://www.hackerone.com/vulnerability-management/hackerone-expands-integrations-ecosystem-connect-and-defend-customers)
+  - [HackerOne Integrates with ServiceNow to Streamline Vulnerability Lifecycle Management](https://www.hackerone.com/vulnerability-management/hackerone-integrates-servicenow-streamline-vulnerability-lifecycle)
+  - [Stay Ahead of Threats With Hacker-Powered Retesting](https://www.hackerone.com/vulnerability-management/stay-ahead-threats-hacker-powered-retesting)
+- 2019
+  - [Improving Your Workflows and Analysis with Custom Fields](https://www.hackerone.com/vulnerability-management/improving-your-workflows-and-analysis-custom-fields)
+  - [Automate Workflows with Enhanced Jira Integration](https://www.hackerone.com/application-security/automate-workflows-enhanced-jira-integration)
+  - [See Your Success In Real Time with the new Program Dashboard](https://www.hackerone.com/vulnerability-management/see-your-success-in-real-time-with-the-new-program-dashboard)
+  - [Introducing Hacker Task Manager and Statistics](https://www.hackerone.com/ethical-hacker/Introducing-Hacker-Task-Manager-and-Statistics)
+  - [Introducing My Programs](https://www.hackerone.com/ethical-hacker/introducing-my-programs)
+  - [Launching the Hacker Calendar, Never Miss a Challenge Again](https://www.hackerone.com/ethical-hacker/launching-hacker-calendar-never-miss-challenge-again)
+  - [Introducing Indian Rupee payments: Cheaper and faster bank transfers](https://www.hackerone.com/ethical-hacker/introducing-indian-rupee-payments-cheaper-and-faster-bank-transfers)
+- 2018
+  - [Hacktivity Disclosure for Private Programs](https://www.hackerone.com/ethical-hacker/hacktivity-disclosure-private-programs)
+  - [Easy and secure Credential Management](https://www.hackerone.com/security-compliance/easy-and-secure-credential-management)
+  - [Introducing Hacker Dashboard: Your personalized HackerOne overview](https://www.hackerone.com/ethical-hacker/introducing-hacker-dashboard-your-personalized-hackerone-overview)
+  - [Integrate HackerOne directly into your website with Embedded Submissions](https://www.hackerone.com/vulnerability-management/integrate-hackerone-directly-your-website-embedded-submissions)
+  - [Discovering programs is easier than ever with the new and improved Program Directory](https://www.hackerone.com/vulnerability-management/Discovering-programs-easier-ever-new-and-improved-Program-Directory)
+  - [Improve Credential Sharing with Hacker Email Aliases](https://www.hackerone.com/ethical-hacker/Improve-Credential-Sharing-Hacker-Email-Aliases)
+  - [Advanced triggers feature launches to further improve signal](https://www.hackerone.com/application-security/Advanced-triggers-feature-launches-further-improve-signal)
+  - [Alexa, ask HackerOne…](https://www.hackerone.com/ethical-hacker/alexa-ask-hackerone)
+  - [Double your signal, double your fun](https://www.hackerone.com/company-news/double-your-signal-double-your-fun)
+- 2017
+  - [Faster and Better: New Bank Transfer Payment Feature for Hackers](https://www.hackerone.com/ethical-hacker/faster-and-better-new-bank-transfer-payment-feature-hackers)
