@@ -3,7 +3,11 @@ title: "Publications"
 order: 2
 ---
 
+- 2026
+  - [56% Faster Validation: An Agentic Workflow for Continuous Exposure Reduction](https://www.hackerone.com/blog/agentic-validation-continuous-exposure-reduction)
+  - [Your Hai Replay: Turning Security Data Into Actionable Insights for 2026](https://www.hackerone.com/blog/hai-replay-actionable-security-insights-2026)
 - 2025
+  - [How Structured Intelligence Accelerates Vulnerability Validation](https://www.hackerone.com/blog/hai-agentic-vulnerability-validation)
   - [Turning Incomplete Submissions into Actionable Intelligence](https://www.hackerone.com/blog/hai-agentic-report-assistant)
   - [Cut the Noise, Keep the Signal: The Hidden Cost of Duplicate Reports](https://www.hackerone.com/blog/smart-deduplication-agentic-ai)
   - [When Every Minute Counts: How Agentic AI Accelerates Exposure Prioritization](https://www.hackerone.com/blog/hai-agentic-exposure-prioritization)
