@@ -1,11 +1,9 @@
 ---
 title: "Teaching my Daikin ACs to cool the room, not the unit"
-date: "2026-06-21"
-updated: "2026-10-28"
+date: "2026-10-28"
 description: "Daikin units regulate on their own sensor near the ceiling, so rooms never quite reach the temperature you asked for. Home Assistant now steers the setpoint from a real room sensor, and since autumn it also picks heating, cooling or off per room."
 categories: ["smarthome"]
 tags: ["home assistant", "smarthome"]
-draft: true
 ---
 
 My four Daikin Perfera split units have a maddening habit: each one regulates on its *own* return-air sensor, tucked up near the ceiling where warm air collects. So the unit happily reports "21 °C, we're done" while the actual room (measured by a Shelly H&T on the wall) is still 23. The result: rooms that never quite hit the temperature you asked for, and a thermostat you stop trusting.

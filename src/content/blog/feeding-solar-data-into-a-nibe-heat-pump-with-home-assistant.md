@@ -4,7 +4,6 @@ date: "2026-10-28"
 description: "NIBE wants a €400 EME 20 module to read your solar inverter. I made Home Assistant pretend to be a SunSpec inverter instead, complete with grid meter and home battery."
 categories: ["smarthome"]
 tags: ["home assistant", "smarthome"]
-draft: true
 ---
 
 My NIBE S320 indoor unit with an S2125 heat pump can use surplus solar energy to heat hot water. NIBE's way to get that information into the heat pump is the EME 20: a €400 module that sits in the heat pump and talks to your solar inverter over RS485.
