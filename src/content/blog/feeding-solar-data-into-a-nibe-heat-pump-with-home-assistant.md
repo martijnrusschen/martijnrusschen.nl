@@ -47,7 +47,7 @@ The add-on config is short. `host_network` makes port 502 reachable on the Home 
 
 ```yaml
 name: SunSpec emulator
-version: "0.2.2"
+version: "0.2.3"
 slug: sunspec_emulator
 arch:
   - amd64
@@ -67,7 +67,7 @@ options:
 The core of the server:
 
 ```python
-block = ModbusSequentialDataBlock(BASE + 1, initial_registers())
+block = ModbusSequentialDataBlock(BASE + 1, initial_registers(opts["battery_max_power"]))
 slave = ModbusSlaveContext(hr=block, ir=block)
 ctx = ModbusServerContext(slaves=slave, single=True)
 asyncio.create_task(updater(ctx, opts))   # refreshes the values every 10 s
@@ -112,6 +112,467 @@ The NIBE now shows the full picture on its **Energy supply** screen: solar, grid
 Floor heating and the air conditioners each have their own controller, and each decision has exactly one owner. The air conditioners are a story of their own: [Teaching my Daikin ACs to cool the room, not the unit](/teaching-my-daikin-acs-to-cool-the-room-not-the-unit/).
 
 I liked that screen enough to build the same diagram for the wall tablet in Home Assistant: a `button-card` with an inline SVG and animated dots in the direction of the flow.
+
+## Build it yourself
+
+Everything below is the exact code that runs in my house. You can copy it into your own Home Assistant and point it at your own sensors.
+
+### What you need
+
+- **Home Assistant OS or Supervised**, because this runs as a local add-on. It listens on port 502 of the Home Assistant host, so give that host a fixed IP (a DHCP reservation is fine).
+- **A NIBE S-series heat pump with recent firmware**: the menu **7.5.12 Modbus TCP/IP accessories** must exist. Mine is a VVM S320 with an S2125.
+- **Sensors in Home Assistant:**
+  - solar power in W, plus one or more lifetime solar energy counters in kWh;
+  - grid power in W, **positive for import**, ideally per phase, with phase voltages;
+  - grid import and export energy counters in kWh (for a Dutch smart meter: the low and high tariff counters);
+  - battery state of charge in % and battery power in W, **positive for charging**. No battery? Point both at a sensor that is always 0.
+
+### 1. Create the add-on
+
+Create a folder `sunspec_emulator` in the local add-ons folder of your Home Assistant host. That's the `addons` share if you use the Samba add-on, or `/addons` over SSH (on recent versions it may be called `/local_apps`). Put these three files in it.
+
+`config.yaml` (replace the entity IDs with your own, the offsets come in step 3):
+
+```yaml
+name: SunSpec emulator
+version: "0.2.3"
+slug: sunspec_emulator
+description: >-
+  Serves solar production, a grid meter and a home battery from Home Assistant
+  as a SunSpec inverter (Modbus TCP), so a NIBE S-series heat pump (menu
+  7.5.12.2) can read them itself, no EME 20 needed.
+arch:
+  - amd64
+startup: application
+boot: auto
+init: false
+host_network: true
+homeassistant_api: true
+options:
+  port: 502
+  pv_power: sensor.solar_power
+  pv_energy:
+    - sensor.solar_energy_total
+  max_age: 1200
+  energy_offset: 0.0
+  grid_power: sensor.grid_power
+  grid_phase_power:
+    - sensor.grid_power_l1
+    - sensor.grid_power_l2
+    - sensor.grid_power_l3
+  grid_phase_voltage:
+    - sensor.grid_voltage_l1
+    - sensor.grid_voltage_l2
+    - sensor.grid_voltage_l3
+  grid_import:
+    - sensor.grid_import_low
+    - sensor.grid_import_high
+  grid_export:
+    - sensor.grid_export_low
+    - sensor.grid_export_high
+  grid_max_age: 120
+  grid_import_offset: 0.0
+  grid_export_offset: 0.0
+  battery_soc: sensor.battery_soc
+  battery_power: sensor.battery_power
+  battery_max_age: 14400
+  battery_max_power: 11000
+  log_requests: false
+schema:
+  port: port
+  pv_power: str
+  pv_energy:
+    - sensor.solar_energy_total
+  max_age: int
+  energy_offset: float
+  grid_power: str
+  grid_phase_power:
+    - str
+  grid_phase_voltage:
+    - str
+  grid_import:
+    - str
+  grid_export:
+    - str
+  grid_max_age: int
+  grid_import_offset: float
+  grid_export_offset: float
+  battery_soc: str
+  battery_power: str
+  battery_max_age: int
+  battery_max_power: int
+  log_requests: bool
+```
+
+`Dockerfile`:
+
+```dockerfile
+ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base:3.20
+FROM $BUILD_FROM
+
+RUN apk add --no-cache python3 py3-pip \
+    && pip3 install --no-cache-dir --break-system-packages "pymodbus~=3.8.0"
+
+COPY sunspec.py /sunspec.py
+# Bypass s6: started through s6, the program doesn't get SUPERVISOR_TOKEN.
+ENTRYPOINT []
+CMD ["python3", "-u", "/sunspec.py"]
+```
+
+`sunspec.py`:
+
+```python
+"""SunSpec inverter, meter and battery (Modbus TCP) backed by Home Assistant.
+
+A NIBE S-series heat pump (tested on a VVM S320) can read a SunSpec inverter
+itself via 'Modbus PV' (menu 7.5.12.2). My inverters and home battery only
+report to a cloud, so this add-on poses as an inverter with a grid meter and a
+battery behind a single unit ID, the way a SolarEdge with a meter does:
+
+    40000  "SunS"
+    40002  model 1   (common: manufacturer, model, serial)
+    40070  model 103 (three-phase inverter: PV power, lifetime energy, status)
+    40122  model 203 (three-phase meter: the grid, positive = import)
+    40229  model 124 (storage: state of charge and charging status)
+    40255  model 160 (MPPT: the panels as a single string; with a storage
+           model present the NIBE takes PV from here, without it the sun
+           shows "no flow")
+    40285  end marker 0xFFFF, 0
+
+Every 10 s it reads the values from Home Assistant. A power value that is older
+than max_age seconds (grid: grid_max_age) or unavailable is reported as 0 W
+(inverter status "sleeping") or as "not implemented", so the heat pump never
+keeps acting on a stale value. Energy counters never go down and count from an
+offset in kWh: the NIBE shows the PV counter as "this month", so set the
+offsets to the counter values on the first day of the month you start.
+"""
+
+import asyncio
+import datetime as dt
+import json
+import os
+import urllib.request
+
+from pymodbus.datastore import (
+    ModbusSequentialDataBlock,
+    ModbusServerContext,
+    ModbusSlaveContext,
+)
+from pymodbus.server import StartAsyncTcpServer
+
+BASE = 40000
+INV = BASE + 70      # model 103: ID, L, 50 data points
+METER = INV + 52     # model 203: ID, L, 105 data points
+STOR = METER + 107   # model 124: ID, L, 24 data points
+MPPT = STOR + 26     # model 160: ID, L, 8 + 20 data points (1 string)
+END = MPPT + 30
+
+NI16 = 0x8000        # int16/sunssf "not implemented"
+NU16 = 0xFFFF        # uint16/enum "not implemented"
+ST_SLEEPING, ST_MPPT = 2, 4
+CHA_DISCHARGING, CHA_CHARGING, CHA_FULL, CHA_HOLDING = 3, 4, 5, 6
+VOLT = 230
+
+
+def text(s, n):
+    b = s.encode()[: 2 * n].ljust(2 * n, b"\0")
+    return [int.from_bytes(b[i : i + 2], "big") for i in range(0, 2 * n, 2)]
+
+
+def u16(x):
+    return int(round(x)) & 0xFFFF
+
+
+def acc32(x):
+    x = int(x) & 0xFFFFFFFF
+    return [x >> 16, x & 0xFFFF]
+
+
+def initial_registers(battery_max_w):
+    regs = [0x5375, 0x6E53]  # "SunS"
+    regs += [1, 66]
+    regs += text("NIBE-HA", 16) + text("Zonneplan PV", 16) + text("", 8)
+    regs += text("0.2.3", 8) + text("HA-PV-0001", 16) + [1, NU16]
+    regs += [103, 50] + inverter_block(0, 0)
+    regs += [203, 105] + meter_block(None, [None] * 3, [None] * 3, 0, 0)
+    regs += [124, 24] + storage_block(None, None, battery_max_w)
+    regs += [160, 28] + mppt_block(0, 0)
+    regs += [0xFFFF, 0]
+    assert len(regs) == END - BASE + 2
+    return regs
+
+
+def inverter_block(watt, wh_100):
+    """Model 103. wh_100 = lifetime energy in units of 100 Wh."""
+    amp = watt / VOLT / 3
+    b = [0] * 50
+    b[0] = u16(amp * 3 * 100)             # A
+    b[1] = b[2] = b[3] = u16(amp * 100)   # AphA/B/C
+    b[4] = u16(-2)                        # A_SF
+    b[5] = b[6] = b[7] = 400              # PPVphAB/BC/CA
+    b[8] = b[9] = b[10] = VOLT            # PhVphA/B/C
+    b[12] = u16(watt)                     # W (W_SF 0)
+    b[14] = 5000                          # Hz
+    b[15] = u16(-2)                       # Hz_SF
+    b[16] = u16(watt)                     # VA
+    b[20] = 100                           # PF
+    b[22:24] = acc32(wh_100)              # WH
+    b[24] = 2                             # WH_SF: 100 Wh
+    b[25], b[26], b[27], b[28] = NU16, NI16, NU16, NI16  # DCA/DCV
+    b[29] = u16(watt)                     # DCW
+    b[31] = b[32] = b[33] = b[34] = b[35] = NI16  # temperatures
+    b[36] = ST_MPPT if watt > 0 else ST_SLEEPING
+    b[37] = NU16                          # StVnd
+    return b
+
+
+def meter_block(watt, phase_w, phase_v, imp_100, exp_100):
+    """Model 203. Power positive = import from the grid. Counters in 100 Wh."""
+    b = [NI16] * 105
+    known = watt is not None
+    pw = [p if p is not None else (watt / 3 if known else None) for p in phase_w]
+    pv = [v if v is not None else VOLT for v in phase_v]
+    amps = [abs(p) / v if p is not None else None for p, v in zip(pw, pv)]
+    if known:
+        b[0] = u16(sum(a for a in amps if a is not None) * 100)  # A
+    for i in range(3):
+        if amps[i] is not None:
+            b[1 + i] = u16(amps[i] * 100)  # AphA/B/C
+    b[4] = u16(-2)                        # A_SF
+    b[5] = u16(sum(pv) / 3)               # PhV
+    b[6:9] = [u16(v) for v in pv]         # PhVphA/B/C
+    b[9] = u16(sum(pv) / 3 * 1.732)       # PPV
+    b[10] = b[11] = b[12] = b[9]          # PPVphAB/BC/CA
+    b[13] = 0                             # V_SF
+    b[14] = 5000                          # Hz
+    b[15] = u16(-2)                       # Hz_SF
+    if known:
+        b[16] = u16(watt)                 # W
+    for i in range(3):
+        if pw[i] is not None:
+            b[17 + i] = u16(pw[i])        # WphA/B/C
+    b[20] = 0                             # W_SF
+    # 21-35: VA, VAR and PF are not measured (NI16)
+    b[36:52] = [0] * 16                   # Wh counters, 0 = not implemented
+    b[36:38] = acc32(exp_100)             # TotWhExp
+    b[44:46] = acc32(imp_100)             # TotWhImp
+    b[52] = 2                             # TotWh_SF: 100 Wh
+    b[53:69] = [0] * 16                   # VAh counters
+    b[70:102] = [0] * 32                  # VArh counters
+    b[103] = b[104] = 0                   # Evt
+    return b
+
+
+def storage_block(soc, watt, battery_max_w):
+    """Model 124. watt positive = charging."""
+    b = [NU16] * 24
+    b[0] = battery_max_w // 10            # WChaMax (SF 1)
+    b[3] = 0                              # StorCtl_Mod
+    if soc is not None:
+        b[6] = u16(soc)                   # ChaState (SF 0)
+    if soc is not None and watt is not None:
+        if watt > 50:
+            b[9] = CHA_CHARGING
+        elif watt < -50:
+            b[9] = CHA_DISCHARGING
+        elif soc >= 99:
+            b[9] = CHA_FULL
+        else:
+            b[9] = CHA_HOLDING
+    if watt is not None:
+        pct = max(-100, min(100, watt / battery_max_w * 100))
+        b[10] = u16(-pct if pct < 0 else 0)   # OutWRte (%)
+        b[11] = u16(pct if pct > 0 else 0)    # InWRte (%)
+    b[16] = 1                             # WChaMax_SF
+    b[17] = b[18] = b[19] = b[21] = b[22] = NI16
+    b[20] = 0                             # ChaState_SF
+    b[23] = 0                             # InOutWRte_SF
+    return b
+
+
+def mppt_block(watt, wh_100):
+    """Model 160 with a single string: PV production on the DC side."""
+    b = [0] * 28
+    b[0] = u16(-2)                        # DCA_SF
+    b[1] = 0                              # DCV_SF
+    b[2] = 0                              # DCW_SF
+    b[3] = 2                              # DCWH_SF: 100 Wh
+    b[6] = 1                              # N: number of strings
+    b[7] = NU16                           # TmsPer
+    b[8] = 1                              # ID
+    b[9:17] = text("PV", 8)               # IDStr
+    b[17] = u16(watt / 400 * 100)         # DCA
+    b[18] = 400                           # DCV
+    b[19] = u16(watt)                     # DCW
+    b[20:22] = acc32(wh_100)              # DCWH
+    b[24] = NI16                          # Tmp
+    b[25] = ST_MPPT if watt > 0 else ST_SLEEPING  # DCSt
+    return b
+
+
+def ha_state(entity_id):
+    req = urllib.request.Request(
+        f"http://supervisor/core/api/states/{entity_id}",
+        headers={"Authorization": f"Bearer {os.environ['SUPERVISOR_TOKEN']}"},
+    )
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.load(r)
+
+
+def fresh(entity_id, max_age):
+    """A number from HA, or None if unavailable or older than max_age.
+
+    Age is based on last_reported, which also moves when an integration
+    reports the same value again (battery at 100% for hours); last_updated
+    does not.
+    """
+    try:
+        s = ha_state(entity_id)
+        seen = s.get("last_reported") or s["last_updated"]
+        age = (dt.datetime.now(dt.timezone.utc)
+               - dt.datetime.fromisoformat(seen)).total_seconds()
+        return float(s["state"]) if age <= max_age else None
+    except (ValueError, OSError, KeyError):
+        return None
+
+
+def total(entity_ids):
+    """Sum of energy counters, or None if one of them is missing."""
+    try:
+        return sum(float(ha_state(e)["state"]) for e in entity_ids)
+    except (ValueError, OSError, KeyError):
+        return None
+
+
+class LoggingBlock(ModbusSequentialDataBlock):
+    """Register block that logs every new read request (address, count) once
+    per 10 minutes, so you can see what the heat pump actually asks for."""
+
+    seen = {}
+
+    def getValues(self, address, count=1):
+        key = (address - 1, count)
+        now = dt.datetime.now()
+        if (now - self.seen.get(key, dt.datetime.min)).total_seconds() > 600:
+            self.seen[key] = now
+            print(f"read {key[0]}..{key[0] + count - 1} ({count})")
+        return super().getValues(address, count)
+
+
+class LoggingContext(ModbusServerContext):
+    """Logs every new unit ID a client asks for."""
+
+    units = set()
+
+    def __getitem__(self, slave):
+        if slave not in self.units:
+            self.units.add(slave)
+            print(f"unit ID {slave} requested")
+        return super().__getitem__(slave)
+
+
+class Counter:
+    """Energy counter in 100 Wh, counting from an offset in kWh, never down."""
+
+    def __init__(self, offset):
+        self.offset, self.value = offset, 0
+
+    def update(self, kwh):
+        if kwh is not None:
+            self.value = max(self.value, round((kwh - self.offset) * 10))
+        return self.value
+
+
+async def updater(ctx, o):
+    pv_wh = Counter(o["energy_offset"])
+    imp_wh = Counter(o["grid_import_offset"])
+    exp_wh = Counter(o["grid_export_offset"])
+    battery_max_w = o["battery_max_power"]
+    last_log = None
+    while True:
+        pv = grid = soc = battery = None
+        try:
+            pv = max(0, min(32767, fresh(o["pv_power"], o["max_age"]) or 0))
+            grid = fresh(o["grid_power"], o["grid_max_age"])
+            phase_w = [fresh(e, o["grid_max_age"]) for e in o["grid_phase_power"]]
+            phase_v = [fresh(e, o["grid_max_age"]) for e in o["grid_phase_voltage"]]
+            soc = fresh(o["battery_soc"], o["battery_max_age"])
+            battery = fresh(o["battery_power"], o["battery_max_age"])
+            pv_100 = pv_wh.update(total(o["pv_energy"]))
+            ctx[0].setValues(3, INV + 2, inverter_block(pv, pv_100))
+            ctx[0].setValues(3, MPPT + 2, mppt_block(pv, pv_100))
+            ctx[0].setValues(3, METER + 2, meter_block(
+                grid, phase_w, phase_v,
+                imp_wh.update(total(o["grid_import"])),
+                exp_wh.update(total(o["grid_export"]))))
+            ctx[0].setValues(3, STOR + 2, storage_block(soc, battery, battery_max_w))
+        except Exception as err:  # noqa: BLE001 - never let the loop die
+            print(f"Update failed ({err!r})")
+        now = dt.datetime.now()
+        if now.minute % 5 == 0 and last_log != now.strftime("%H:%M"):
+            last_log = now.strftime("%H:%M")
+            print(f"{last_log} PV {pv} W ({pv_wh.value / 10:.1f} kWh), grid {grid} W "
+                  f"(import {imp_wh.value / 10:.1f} / export {exp_wh.value / 10:.1f} kWh), "
+                  f"battery {soc}% {battery} W")
+        await asyncio.sleep(10)
+
+
+async def main():
+    with open("/data/options.json") as f:
+        opts = json.load(f)
+    # pymodbus adds 1 to every address (get and set), so the block starts at
+    # 40001 to put "SunS" at protocol address 40000.
+    block = (LoggingBlock if opts.get("log_requests") else ModbusSequentialDataBlock)(
+        BASE + 1, initial_registers(opts["battery_max_power"]))
+    slave = ModbusSlaveContext(hr=block, ir=block)
+    ctx = (LoggingContext if opts.get("log_requests") else ModbusServerContext)(
+        slaves=slave, single=True)
+    asyncio.create_task(updater(ctx, opts))
+    print(f"SunSpec on port {opts['port']}: inverter {opts['pv_power']}, "
+          f"meter {opts['grid_power']}, battery {opts['battery_soc']}")
+    await StartAsyncTcpServer(context=ctx, address=("0.0.0.0", opts["port"]))
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+### 2. Install and configure
+
+1. Go to **Settings → Add-ons → Add-on store**, open the ⋮ menu and choose **Check for updates**. "SunSpec emulator" appears under **Local add-ons**.
+2. Install it, then open the **Configuration** tab and fill in your entity IDs.
+3. Set the three offsets. The NIBE shows the solar counter as "this month", so use the counter values on the first day of the current month (the Home Assistant history or statistics will give you those). Leave them at 0 if you don't care about the monthly number.
+4. Set `battery_max_power` to your battery's maximum charge power in W.
+5. Start the add-on. The log shows one line every 5 minutes with the values it serves.
+
+### 3. Check it before the heat pump does
+
+From any computer on your network, the official SunSpec client should find all five models with your current values:
+
+```python
+# pip install pysunspec2
+import sunspec2.modbus.client as client
+
+d = client.SunSpecModbusClientDeviceTCP(slave_id=1, ipaddr="192.168.1.10", ipport=502)
+d.scan()
+print([m for m in d.models if isinstance(m, int)])   # [1, 103, 203, 124, 160]
+inv = d.models[103][0]; inv.read(); print("PV", inv.W.cvalue, "W")
+m = d.models[203][0]; m.read(); print("grid", m.W.cvalue, "W")
+d.close()
+```
+
+### 4. Set up the NIBE
+
+- **7.5.12.1**: turn on **Modbus PV**.
+- **7.5.12.2**: **Add inverter**, type **SunSpec**, the IP of your Home Assistant host, port **502**, unit ID **1**. After a minute the PV screen shows production, and **Energy supply** shows sun, grid, house and battery.
+- **4.2.2 Solar energy**: choose what solar may affect (I only use hot water), set **heat source** to *compressor only*, and set the **energy meter** to *smart meter* so the heat pump looks at real export instead of all production.
+- **Don't** turn on the EME 20 accessory (Modbus register 44001). The heat pump will look for the physical module and raise a communication alarm.
+
+### Troubleshooting
+
+- **Set `log_requests: true`** to log every register range and unit ID the heat pump reads. That's how I found out it wanted model 160.
+- **The sun shows "no flow"** while production is fine: the heat pump treats the device as a hybrid inverter and reads PV from model 160. Make sure that model is in the chain (it is in the code above).
+- **Values freeze or drop to 0**: the add-on reports 0 W when a sensor is older than `max_age`. Some integrations don't report unchanged values; that's why the battery has its own, longer `battery_max_age`.
 
 ## Caveats
 
