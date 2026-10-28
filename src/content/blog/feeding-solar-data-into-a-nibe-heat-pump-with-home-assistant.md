@@ -48,7 +48,7 @@ The add-on config is short. `host_network` makes port 502 reachable on the Home 
 
 ```yaml
 name: SunSpec emulator
-version: "0.2.7"
+version: "0.2.8"
 slug: sunspec_emulator
 arch:
   - amd64
@@ -97,7 +97,7 @@ The same day it bit me a second time. In the evening the battery was selling abo
 
 That fixed the house, until the cloud bit back. Later that evening the NIBE showed 10 kW of export and "no flow" for the house again. The cause wasn't the code: Zonneplan's cloud said the battery was discharging 0.7 kW, while the grid meter showed 9.9 kW going out with no sun. Cloud battery values are minutes old or a random sample of a battery that trades in bursts.
 
-So the add-on now only takes the *direction* from the cloud (charging, discharging, idle) and the *amount* from the live grid meter: solar + grid − an estimate of the house (a 750 W base load plus the heat pump's own measured power). I also laid out model 160 the way a Fronius GEN24 does, with two PV strings plus "StCha 3" and "StDisCha 4" for the battery; the NIBE reads those modules and uses them for its sums. It still labels the battery itself "no flow", but every other number on the screen now adds up.
+So the add-on now only takes the *direction* from the cloud (charging, discharging, idle) and the *amount* from the live grid meter: solar + grid − an estimate of the house (a 750 W base load plus the heat pump's own measured power). I also laid out model 160 the way a Fronius GEN24 does, with two PV strings plus "StCha 3" and "StDisCha 4" for the battery; the NIBE reads those modules and uses them for its sums. It still labels the battery itself "no flow", even with model 124 filled exactly the way a Fronius does it; my guess is that the heat pump only draws battery flow for inverters it officially supports. Every other number on the screen adds up, and those are the numbers it actually controls on.
 
 ## Why the grid comes from the YouLess, not Zonneplan
 
@@ -142,7 +142,7 @@ Create a folder `sunspec_emulator` in the local add-ons folder of your Home Assi
 
 ```yaml
 name: SunSpec emulator
-version: "0.2.7"
+version: "0.2.8"
 slug: sunspec_emulator
 description: >-
   Serves solar production, a grid meter and a home battery from Home Assistant
@@ -325,7 +325,7 @@ def initial_registers(battery_max_w, battery_wh):
     regs = [0x5375, 0x6E53]  # "SunS"
     regs += [1, 66]
     regs += text("NIBE-HA", 16) + text("Zonneplan PV", 16) + text("", 8)
-    regs += text("0.2.7", 8) + text("HA-PV-0001", 16) + [1, NU16]
+    regs += text("0.2.8", 8) + text("HA-PV-0001", 16) + [1, NU16]
     regs += [103, 50] + inverter_block(0, 0)
     regs += [203, 105] + meter_block(None, [None] * 3, [None] * 3, 0, 0)
     regs += [124, 24] + storage_block(None, None, battery_max_w)
@@ -399,29 +399,29 @@ def meter_block(watt, phase_w, phase_v, imp_100, exp_100):
 
 
 def storage_block(soc, watt, battery_max_w):
-    """Model 124. watt positive = charging."""
+    """Model 124, filled the way a Fronius GEN24 does: power in W (SF 0),
+    percentages in hundredths (SF -2). OutWRte/InWRte are the allowed rates
+    (100%), not the actual flow; that lives in model 160. watt positive =
+    charging."""
     b = [NU16] * 24
-    b[0] = battery_max_w // 10            # WChaMax (SF 1)
+    b[0] = u16(battery_max_w)             # WChaMax (SF 0)
+    b[1] = b[2] = 100                     # WChaGra, WDisChaGra (% WChaMax/s)
     b[3] = 0                              # StorCtl_Mod
+    b[5] = 0                              # MinRsvPct
     if soc is not None:
-        b[6] = u16(soc)                   # ChaState (SF 0)
+        b[6] = u16(soc * 100)             # ChaState (SF -2)
     if soc is not None and watt is not None:
-        if watt > 50:
-            b[9] = CHA_CHARGING
-        elif watt < -50:
-            b[9] = CHA_DISCHARGING
-        elif soc >= 99:
-            b[9] = CHA_FULL
-        else:
-            b[9] = CHA_HOLDING
-    if watt is not None:
-        pct = max(-100, min(100, watt / battery_max_w * 100))
-        b[10] = u16(-pct if pct < 0 else 0)   # OutWRte (%)
-        b[11] = u16(pct if pct > 0 else 0)    # InWRte (%)
-    b[16] = 1                             # WChaMax_SF
-    b[17] = b[18] = b[19] = b[21] = b[22] = NI16
-    b[20] = 0                             # ChaState_SF
-    b[23] = 0                             # InOutWRte_SF
+        b[9] = (CHA_CHARGING if watt > 50 else CHA_DISCHARGING if watt < -50
+                else CHA_FULL if soc >= 99 else CHA_HOLDING)  # ChaSt
+    b[10] = b[11] = 10000                 # OutWRte, InWRte: 100% (SF -2)
+    b[15] = 1                             # ChaGriSet: grid charging allowed
+    b[16] = 0                             # WChaMax_SF
+    b[17] = 0                             # WChaDisChaGra_SF
+    b[18] = NI16                          # VAChaMax_SF
+    b[19] = u16(-2)                       # MinRsvPct_SF
+    b[20] = u16(-2)                       # ChaState_SF
+    b[21] = b[22] = NI16                  # StorAval_SF, InBatV_SF
+    b[23] = u16(-2)                       # InOutWRte_SF
     return b
 
 
