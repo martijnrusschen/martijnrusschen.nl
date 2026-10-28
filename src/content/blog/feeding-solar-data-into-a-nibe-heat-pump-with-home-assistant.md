@@ -40,14 +40,15 @@ The add-on is about 300 lines of Python using `pymodbus`. Every 10 seconds it re
 | 40070 | 103 (three-phase inverter) | AC power, lifetime energy, status | Zonneplan inverters |
 | 40122 | 203 (three-phase meter) | grid power per phase, voltage, import/export counters | YouLess |
 | 40229 | 124 (storage) | state of charge, charging status | Zonneplan battery |
-| 40255 | 160 (MPPT) | PV as a single DC string | Zonneplan inverters |
-| 40285 | end marker | `0xFFFF, 0` | fixed |
+| 40255 | 160 (MPPT) | two PV strings plus battery charge/discharge, laid out like a Fronius GEN24 | inverters and battery |
+| 40345 | 802 (battery) | SoC and power (the NIBE skips it) | battery |
+| 40409 | end marker | `0xFFFF, 0` | fixed |
 
 The add-on config is short. `host_network` makes port 502 reachable on the Home Assistant IP, and `homeassistant_api` gives the add-on a token for the Core API:
 
 ```yaml
 name: SunSpec emulator
-version: "0.2.4"
+version: "0.2.7"
 slug: sunspec_emulator
 arch:
   - amd64
@@ -94,6 +95,10 @@ With a storage model present, the NIBE treats the device as a **hybrid inverter*
 
 The same day it bit me a second time. In the evening the battery was selling about 11 kW to the grid, and the NIBE showed 5.4 kW of export coming from nowhere: sun, house and battery all "no flow". A hybrid inverter's AC output includes the battery, so model 103 has to report PV minus battery power, not PV alone. With that, the heat pump works out the battery flow and the house load itself.
 
+That fixed the house, until the cloud bit back. Later that evening the NIBE showed 10 kW of export and "no flow" for the house again. The cause wasn't the code: Zonneplan's cloud said the battery was discharging 0.7 kW, while the grid meter showed 9.9 kW going out with no sun. Cloud battery values are minutes old or a random sample of a battery that trades in bursts.
+
+So the add-on now only takes the *direction* from the cloud (charging, discharging, idle) and the *amount* from the live grid meter: solar + grid − an estimate of the house (a 750 W base load plus the heat pump's own measured power). I also laid out model 160 the way a Fronius GEN24 does, with two PV strings plus "StCha 3" and "StDisCha 4" for the battery; the NIBE reads those modules and uses them for its sums. It still labels the battery itself "no flow", but every other number on the screen now adds up.
+
 ## Why the grid comes from the YouLess, not Zonneplan
 
 Zonneplan also reports grid power from its own P1 dongle, and all Zonneplan values update in the same batch. That sounds like the cleanest source, so I tested it against a week of history. At every battery update, I computed house consumption as solar + grid − battery:
@@ -137,7 +142,7 @@ Create a folder `sunspec_emulator` in the local add-ons folder of your Home Assi
 
 ```yaml
 name: SunSpec emulator
-version: "0.2.4"
+version: "0.2.7"
 slug: sunspec_emulator
 description: >-
   Serves solar production, a grid meter and a home battery from Home Assistant
@@ -179,6 +184,11 @@ options:
   battery_power: sensor.battery_power
   battery_max_age: 14400
   battery_max_power: 11000
+  battery_capacity: 10000
+  battery_derive: true
+  house_base_load: 750
+  heat_pump_power: sensor.heat_pump_power
+  heat_pump_power_unit: W
   log_requests: false
 schema:
   port: port
@@ -203,6 +213,11 @@ schema:
   battery_power: str
   battery_max_age: int
   battery_max_power: int
+  battery_capacity: int
+  battery_derive: bool
+  house_base_load: int
+  heat_pump_power: str
+  heat_pump_power_unit: list(W|kW)
   log_requests: bool
 ```
 
@@ -236,16 +251,25 @@ battery behind a single unit ID, the way a SolarEdge with a meter does:
     40070  model 103 (three-phase inverter: PV power, lifetime energy, status)
     40122  model 203 (three-phase meter: the grid, positive = import)
     40229  model 124 (storage: state of charge and charging status)
-    40255  model 160 (MPPT: the panels as a single string; with a storage
-           model present the NIBE takes PV from here, without it the sun
-           shows "no flow")
-    40285  end marker 0xFFFF, 0
+    40255  model 160 (MPPT, laid out like a Fronius GEN24: two PV strings
+           plus "StCha 3"/"StDisCha 4" for battery charge and discharge; with
+           a storage model present the heat pump takes PV and the battery flow
+           from here, without it they show "no flow")
+    40345  model 802 (battery: SoC and power; the heat pump doesn't read it,
+           but it costs nothing and helps other SunSpec clients)
+    40409  end marker 0xFFFF, 0
 
 Because of the storage model, the heat pump treats the device as a hybrid
 inverter: it takes solar production from model 160 (DC side) and the
 inverter's AC output from model 103. A hybrid inverter's AC output includes
 the battery, so model 103 reports PV minus battery power (positive = charging);
 the heat pump derives the battery flow and the house load from that.
+
+Cloud-connected batteries often report minutes late or a random sample (mine
+said 0.7 kW while it was sending 10 kW to the grid). With battery_derive on,
+the cloud value only gives the direction (charging, discharging, idle) and the
+amount comes from the live grid meter: solar + grid - estimated house load
+(house_base_load plus the heat pump's own measured power).
 
 Every 10 s it reads the values from Home Assistant. A power value that is older
 than max_age seconds (grid: grid_max_age) or unavailable is reported as 0 W
@@ -272,8 +296,9 @@ BASE = 40000
 INV = BASE + 70      # model 103: ID, L, 50 data points
 METER = INV + 52     # model 203: ID, L, 105 data points
 STOR = METER + 107   # model 124: ID, L, 24 data points
-MPPT = STOR + 26     # model 160: ID, L, 8 + 20 data points (1 string)
-END = MPPT + 30
+MPPT = STOR + 26     # model 160: ID, L, 8 + 4 x 20 data points (4 modules)
+BATT = MPPT + 90     # model 802: ID, L, 62 data points
+END = BATT + 64
 
 NI16 = 0x8000        # int16/sunssf "not implemented"
 NU16 = 0xFFFF        # uint16/enum "not implemented"
@@ -296,15 +321,16 @@ def acc32(x):
     return [x >> 16, x & 0xFFFF]
 
 
-def initial_registers(battery_max_w):
+def initial_registers(battery_max_w, battery_wh):
     regs = [0x5375, 0x6E53]  # "SunS"
     regs += [1, 66]
     regs += text("NIBE-HA", 16) + text("Zonneplan PV", 16) + text("", 8)
-    regs += text("0.2.4", 8) + text("HA-PV-0001", 16) + [1, NU16]
+    regs += text("0.2.7", 8) + text("HA-PV-0001", 16) + [1, NU16]
     regs += [103, 50] + inverter_block(0, 0)
     regs += [203, 105] + meter_block(None, [None] * 3, [None] * 3, 0, 0)
     regs += [124, 24] + storage_block(None, None, battery_max_w)
-    regs += [160, 28] + mppt_block(0, 0)
+    regs += [160, 88] + mppt_block(0, 0)
+    regs += [802, 62] + battery_block(None, None, battery_max_w, battery_wh)
     regs += [0xFFFF, 0]
     assert len(regs) == END - BASE + 2
     return regs
@@ -399,23 +425,67 @@ def storage_block(soc, watt, battery_max_w):
     return b
 
 
-def mppt_block(watt, wh_100):
-    """Model 160 with a single string: PV production on the DC side."""
-    b = [0] * 28
+def mppt_block(watt, wh_100, battery=None):
+    """Model 160 laid out like a Fronius GEN24 hybrid inverter: modules 1-2 are
+    the PV strings, module 3 ("StCha 3") is battery charging and module 4
+    ("StDisCha 4") battery discharging. The heat pump takes the battery flow
+    from these modules. battery positive = charging."""
+    cha = max(0, battery or 0)
+    dis = max(0, -(battery or 0))
+    b = [0] * 8
     b[0] = u16(-2)                        # DCA_SF
     b[1] = 0                              # DCV_SF
     b[2] = 0                              # DCW_SF
     b[3] = 2                              # DCWH_SF: 100 Wh
-    b[6] = 1                              # N: number of strings
+    b[6] = 4                              # N: number of modules
     b[7] = NU16                           # TmsPer
-    b[8] = 1                              # ID
-    b[9:17] = text("PV", 8)               # IDStr
-    b[17] = u16(watt / 400 * 100)         # DCA
-    b[18] = 400                           # DCV
-    b[19] = u16(watt)                     # DCW
-    b[20:22] = acc32(wh_100)              # DCWH
-    b[24] = NI16                          # Tmp
-    b[25] = ST_MPPT if watt > 0 else ST_SLEEPING  # DCSt
+    for i, (name, w, wh) in enumerate([("PV1", watt, wh_100), ("PV2", 0, 0),
+                                       ("StCha 3", cha, 0), ("StDisCha 4", dis, 0)]):
+        m = [0] * 20
+        m[0] = i + 1                      # ID
+        m[1:9] = text(name, 8)            # IDStr
+        m[9] = u16(w / 400 * 100)         # DCA
+        m[10] = 400                       # DCV
+        m[11] = u16(w)                    # DCW
+        m[12:14] = acc32(wh)              # DCWH
+        m[16] = NI16                      # Tmp
+        m[17] = ST_MPPT if w > 0 else ST_SLEEPING  # DCSt
+        b += m
+    return b
+
+
+def battery_block(soc, watt, battery_max_w, battery_wh):
+    """Model 802. watt positive = charging (as in HA); SunSpec W here is
+    positive for discharging, like an inverter's output."""
+    b = [NU16] * 62
+    b[1] = u16(battery_wh / 10)           # WHRtg (SF 1)
+    b[2] = b[3] = u16(battery_max_w / 10)  # WChaRteMax/WDisChaRteMax (SF 1)
+    if soc is not None:
+        b[9] = u16(soc)                   # SoC (SF 0)
+    b[12] = b[13] = NU16                  # NCyc
+    if soc is not None and watt is not None:
+        b[14] = (CHA_CHARGING if watt > 50 else CHA_DISCHARGING if watt < -50
+                 else CHA_FULL if soc >= 99 else CHA_HOLDING)  # ChaSt
+    b[15] = 1                             # LocRemCtl: local
+    b[16] = b[17] = b[18] = 0             # Hb, CtrlHb, AlmRst
+    b[19] = 4                             # Typ: lithium-ion
+    b[20] = 3                             # State: connected
+    b[22] = b[23] = 0                     # WarrDt
+    b[24:32] = [0] * 8                    # Evt1/2, EvtVnd1/2
+    b[42] = NI16                          # A
+    b[45] = u16(-watt) if watt is not None else NI16  # W
+    b[47] = NI16                          # ReqW
+    b[48] = 1                             # SetOp: connect
+    b[49] = 3                             # SetInvState: started
+    b[50] = 0                             # AHRtg_SF
+    b[51] = 1                             # WHRtg_SF
+    b[52] = 1                             # WChaDisChaMax_SF
+    b[53] = NI16                          # DisChaRte_SF
+    b[54] = 0                             # SoC_SF
+    b[55] = b[56] = NI16                  # DoD_SF, SoH_SF
+    b[57] = 0                             # V_SF
+    b[58] = b[59] = b[60] = NI16          # CellV_SF, A_SF, AMax_SF
+    b[61] = 0                             # W_SF
     return b
 
 
@@ -451,6 +521,19 @@ def total(entity_ids):
         return sum(float(ha_state(e)["state"]) for e in entity_ids)
     except (ValueError, OSError, KeyError):
         return None
+
+
+def battery_flow(cloud, pv, grid, house):
+    """Battery power (positive = charging) from the live grid meter, with the
+    cloud value only deciding the direction. None if there is nothing to go on."""
+    if cloud is None:
+        return None
+    if abs(cloud) < 200:
+        return 0.0
+    if grid is None:
+        return cloud
+    derived = pv + grid - house
+    return max(0.0, derived) if cloud > 0 else min(0.0, derived)
 
 
 class LoggingBlock(ModbusSequentialDataBlock):
@@ -507,15 +590,23 @@ async def updater(ctx, o):
             phase_v = [fresh(e, o["grid_max_age"]) for e in o["grid_phase_voltage"]]
             soc = fresh(o["battery_soc"], o["battery_max_age"])
             battery = fresh(o["battery_power"], o["battery_max_age"])
+            if o["battery_derive"]:
+                hp = fresh(o["heat_pump_power"], o["grid_max_age"]) or 0
+                hp *= 1000 if o["heat_pump_power_unit"] == "kW" else 1
+                battery = battery_flow(battery, pv, grid, o["house_base_load"] + hp)
+            if battery is not None:
+                battery = max(-battery_max_w, min(battery_max_w, battery))
             pv_100 = pv_wh.update(total(o["pv_energy"]))
             ac = max(-32767, min(32767, pv - (battery or 0)))
             ctx[0].setValues(3, INV + 2, inverter_block(ac, pv_100))
-            ctx[0].setValues(3, MPPT + 2, mppt_block(pv, pv_100))
+            ctx[0].setValues(3, MPPT + 2, mppt_block(pv, pv_100, battery))
             ctx[0].setValues(3, METER + 2, meter_block(
                 grid, phase_w, phase_v,
                 imp_wh.update(total(o["grid_import"])),
                 exp_wh.update(total(o["grid_export"]))))
             ctx[0].setValues(3, STOR + 2, storage_block(soc, battery, battery_max_w))
+            ctx[0].setValues(3, BATT + 2, battery_block(
+                soc, battery, battery_max_w, o["battery_capacity"]))
         except Exception as err:  # noqa: BLE001 - never let the loop die
             print(f"Update failed ({err!r})")
         now = dt.datetime.now()
@@ -533,7 +624,7 @@ async def main():
     # pymodbus adds 1 to every address (get and set), so the block starts at
     # 40001 to put "SunS" at protocol address 40000.
     block = (LoggingBlock if opts.get("log_requests") else ModbusSequentialDataBlock)(
-        BASE + 1, initial_registers(opts["battery_max_power"]))
+        BASE + 1, initial_registers(opts["battery_max_power"], opts["battery_capacity"]))
     slave = ModbusSlaveContext(hr=block, ir=block)
     ctx = (LoggingContext if opts.get("log_requests") else ModbusServerContext)(
         slaves=slave, single=True)
@@ -583,6 +674,7 @@ d.close()
 - **Set `log_requests: true`** to log every register range and unit ID the heat pump reads. That's how I found out it wanted model 160.
 - **The sun shows "no flow"** while production is fine: the heat pump treats the device as a hybrid inverter and reads PV from model 160. Make sure that model is in the chain (it is in the code above).
 - **Grid export with no visible source** (sun, house and battery all "no flow" while the battery discharges): a hybrid inverter's AC output includes the battery, so model 103 must report PV minus battery power. The code above does that.
+- **House shows "no flow" while the battery is busy**: your battery value is late or wrong. Keep `battery_derive: true` and set `house_base_load` to your typical base load and `heat_pump_power` to the heat pump's own power sensor.
 - **Values freeze or drop to 0**: the add-on reports 0 W when a sensor is older than `max_age`. Some integrations don't report unchanged values; that's why the battery has its own, longer `battery_max_age`.
 
 ## Caveats
