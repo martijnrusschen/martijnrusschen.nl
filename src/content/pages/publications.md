@@ -3,6 +3,13 @@ title: "Publications"
 order: 2
 ---
 
+## In the press
+
+- 2026
+  - [Na de griep weer fietsen? Je lichaam heeft veel langer nodig om te herstellen dan je denkt](https://wielerrevue.nl/artikel/699156/na-de-griep-weer-fietsen-je-lichaam-heeft-veel-langer-nodig-om-te-herstellen-dan-je-denkt-p7m642) (Wieler Revue, in Dutch). Quoted as founder of IntervalCoach, based on IntervalCoach data from over a thousand illness periods.
+
+## HackerOne blog
+
 - 2026
   - [56% Faster Validation: An Agentic Workflow for Continuous Exposure Reduction](https://www.hackerone.com/blog/agentic-validation-continuous-exposure-reduction)
   - [Your Hai Replay: Turning Security Data Into Actionable Insights for 2026](https://www.hackerone.com/blog/hai-replay-actionable-security-insights-2026)
