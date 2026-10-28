@@ -1,7 +1,7 @@
 ---
 title: "Feeding solar data into a NIBE heat pump with Home Assistant (no EME 20 needed)"
 date: "2026-10-28"
-description: "NIBE wants a €400 EME 20 module to read your solar inverter. I made Home Assistant pretend to be a SunSpec inverter instead, complete with grid meter and home battery."
+description: "NIBE wants a €400 EME 20 module to read your solar inverter. I made Home Assistant pretend to be one instead: first a SunSpec inverter, in the end a Huawei SUN2000 with battery and smart meter."
 categories: ["smarthome"]
 tags: ["home assistant", "smarthome"]
 ---
@@ -14,7 +14,7 @@ So the question was: can Home Assistant play the part of the solar inverter? It 
 
 ## What the NIBE can read
 
-Recent S-series firmware has a menu **7.5.12 Modbus TCP/IP accessories**. Turn on **Modbus PV** in 7.5.12.1, and 7.5.12.2 lets you add an inverter of type **SunSpec**, with an IP address, port and unit ID.
+Recent S-series firmware has a menu **7.5.12 Modbus TCP/IP accessories**. Turn on **Modbus PV** in 7.5.12.1, and 7.5.12.2 lets you add an inverter with an IP address, port and unit ID. The inverter **type** can be **SunSpec**, **Huawei Sun2000**, **Huawei EMMA** or **Sungrow SH Series**. That choice turns out to matter a lot, as you'll see.
 
 SunSpec is an open standard for how inverters, energy meters and batteries expose their data over Modbus. If something on the network answers like a SunSpec inverter, the NIBE will read it. It doesn't care what's behind it.
 
@@ -48,7 +48,7 @@ The add-on config is short. `host_network` makes port 502 reachable on the Home 
 
 ```yaml
 name: SunSpec emulator
-version: "0.2.8"
+version: "0.3.2"
 slug: sunspec_emulator
 arch:
   - amd64
@@ -97,7 +97,25 @@ The same day it bit me a second time. In the evening the battery was selling abo
 
 That fixed the house, until the cloud bit back. Later that evening the NIBE showed 10 kW of export and "no flow" for the house again. The cause wasn't the code: Zonneplan's cloud said the battery was discharging 0.7 kW, while the grid meter showed 9.9 kW going out with no sun. Cloud battery values are minutes old or a random sample of a battery that trades in bursts.
 
-So the add-on now only takes the *direction* from the cloud (charging, discharging, idle) and the *amount* from the live grid meter: solar + grid − an estimate of the house (a 750 W base load plus the heat pump's own measured power). I also laid out model 160 the way a Fronius GEN24 does, with two PV strings plus "StCha 3" and "StDisCha 4" for the battery; the NIBE reads those modules and uses them for its sums. It still labels the battery itself "no flow", even with model 124 filled exactly the way a Fronius does it; my guess is that the heat pump only draws battery flow for inverters it officially supports. Every other number on the screen adds up, and those are the numbers it actually controls on.
+So the add-on now only takes the *direction* from the cloud (charging, discharging, idle) and the *amount* from the live grid meter: solar + grid − an estimate of the house (a 750 W base load plus the heat pump's own measured power). I also laid out model 160 the way a Fronius GEN24 does, with two PV strings plus "StCha 3" and "StDisCha 4" for the battery; the NIBE reads those modules and uses them for its sums. It still labels the battery itself "no flow", even with model 124 filled exactly the way a Fronius does it; my guess is that the heat pump only draws battery flow for inverters it officially supports. Every other number on the screen added up.
+
+### The battery only shows up for a Huawei
+
+So I went looking for how it *should* work. NIBE's release notes give it away: "Support for Huawei SUN2000, including Smart Meter and energy dashboard" and "Enhanced compatibility with Huawei Sun2000 PV hybrid inverters". For SunSpec they only ever mention the energy dashboard and the smart meter, never a battery. NIBE's own installation guide for Huawei shows the rest: pick the type **Huawei Sun2000**, and the heat pump reads Huawei's own register map, including the Huawei smart meter through the inverter.
+
+So the add-on got a second mode in which it poses as a Huawei SUN2000 with a LUNA2000 battery and a DTSU666-H smart meter. With logging on, the heat pump read exactly these registers:
+
+| Registers | What | Filled with |
+|---|---|---|
+| 30000, 30015, 30071 | model, serial number, number of PV strings | a SUN2000-10KTL-M1 with two strings |
+| 32000, 32008–32010, 32089 | status and alarms | on-grid, no alarms |
+| 32016–32019 | PV1 and PV2 voltage and current | the solar power, split over two strings |
+| 32080, 32106 | AC power, lifetime yield | PV minus battery, the PV counter |
+| 37101–37118, 37132–37137 | smart meter: voltage, current, power (+ = export), per phase | the YouLess |
+| 37758, 37760, 37765 | battery capacity, SoC, charge/discharge power (+ = charging) | the derived battery value |
+| 47107–47108 | battery unit 1 and 2 installed | 1 and 0 |
+
+Two details mattered. The heat pump takes solar production from the string voltages and currents, not from Huawei's total input power register. And it only believes there is a battery when 47000 says LUNA2000 and 47107 says "installed"; with those at 0 it counted the battery's 10 kW as sunshine. With both set, the **Energy supply** screen showed the battery at last: 10.3 kW out of the battery, 9.5 kW to the grid, 490 W for the heat pump and 300 W for the house.
 
 ## Why the grid comes from the YouLess, not Zonneplan
 
@@ -114,7 +132,7 @@ This is also why a home-made "real surplus" calculation didn't work. Letting the
 
 ## The result
 
-The NIBE now shows the full picture on its **Energy supply** screen: solar, grid, house, heat pump and battery, with flows that add up. In menu 4.2.2 I let solar affect **hot water only**, with heat source **compressor only**, and the energy meter set to **smart meter**. Floor heating stays under its own Home Assistant automation.
+The NIBE now shows the full picture on its **Energy supply** screen: solar, grid, house, heat pump and battery, with flows that add up. It thinks it's talking to a Huawei. In menu 4.2.2 I let solar affect **hot water only**, with heat source **compressor only**, and the energy meter set to **smart meter**. Floor heating stays under its own Home Assistant automation.
 
 Floor heating and the air conditioners each have their own controller, and each decision has exactly one owner. The air conditioners are a story of their own: [Teaching my Daikin ACs to cool the room, not the unit](/teaching-my-daikin-acs-to-cool-the-room-not-the-unit/).
 
@@ -142,12 +160,13 @@ Create a folder `sunspec_emulator` in the local add-ons folder of your Home Assi
 
 ```yaml
 name: SunSpec emulator
-version: "0.2.8"
+version: "0.3.2"
 slug: sunspec_emulator
 description: >-
   Serves solar production, a grid meter and a home battery from Home Assistant
-  as a SunSpec inverter (Modbus TCP), so a NIBE S-series heat pump (menu
-  7.5.12.2) can read them itself, no EME 20 needed.
+  to a NIBE S-series heat pump over Modbus TCP, posing as a Huawei SUN2000 with
+  LUNA2000 battery and smart meter (protocol: huawei) or as a generic SunSpec
+  inverter (protocol: sunspec). No EME 20 needed.
 arch:
   - amd64
 startup: application
@@ -156,6 +175,7 @@ init: false
 host_network: true
 homeassistant_api: true
 options:
+  protocol: huawei
   port: 502
   pv_power: sensor.solar_power
   pv_energy:
@@ -191,6 +211,7 @@ options:
   heat_pump_power_unit: W
   log_requests: false
 schema:
+  protocol: list(sunspec|huawei)
   port: port
   pv_power: str
   pv_energy:
@@ -239,31 +260,31 @@ CMD ["python3", "-u", "/sunspec.py"]
 `sunspec.py`:
 
 ```python
-"""SunSpec inverter, meter and battery (Modbus TCP) backed by Home Assistant.
+"""Huawei SUN2000 or SunSpec inverter, meter and battery (Modbus TCP) backed by
+Home Assistant, for a NIBE S-series heat pump (tested on a VVM S320).
 
-A NIBE S-series heat pump (tested on a VVM S320) can read a SunSpec inverter
-itself via 'Modbus PV' (menu 7.5.12.2). My inverters and home battery only
-report to a cloud, so this add-on poses as an inverter with a grid meter and a
-battery behind a single unit ID, the way a SolarEdge with a meter does:
+The heat pump reads an inverter itself via 'Modbus PV' (menu 7.5.12.2). My
+inverters and home battery only report to a cloud, so this add-on poses as
+one. Two protocols:
 
+protocol: huawei (inverter type "Huawei Sun2000" on the heat pump)
+    Huawei's own register map: SUN2000 inverter, DTSU666-H smart meter and a
+    LUNA2000 battery. This is the only type for which the heat pump shows the
+    battery flow. It reads PV from the string voltages and currents, decides
+    there is a battery from 47000/47107, and takes its power from 37765.
+
+protocol: sunspec (inverter type "SunSpec")
     40000  "SunS"
     40002  model 1   (common: manufacturer, model, serial)
-    40070  model 103 (three-phase inverter: PV power, lifetime energy, status)
+    40070  model 103 (three-phase inverter: AC output = PV minus battery)
     40122  model 203 (three-phase meter: the grid, positive = import)
-    40229  model 124 (storage: state of charge and charging status)
-    40255  model 160 (MPPT, laid out like a Fronius GEN24: two PV strings
-           plus "StCha 3"/"StDisCha 4" for battery charge and discharge; with
-           a storage model present the heat pump takes PV and the battery flow
-           from here, without it they show "no flow")
-    40345  model 802 (battery: SoC and power; the heat pump doesn't read it,
-           but it costs nothing and helps other SunSpec clients)
+    40229  model 124 (storage: filled the way a Fronius GEN24 does)
+    40255  model 160 (MPPT, like a Fronius GEN24: two PV strings plus
+           "StCha 3"/"StDisCha 4" for battery charge and discharge)
+    40345  model 802 (battery: SoC and power; the heat pump skips it)
     40409  end marker 0xFFFF, 0
-
-Because of the storage model, the heat pump treats the device as a hybrid
-inverter: it takes solar production from model 160 (DC side) and the
-inverter's AC output from model 103. A hybrid inverter's AC output includes
-the battery, so model 103 reports PV minus battery power (positive = charging);
-the heat pump derives the battery flow and the house load from that.
+    The heat pump balances house and grid with this, but never draws a
+    battery flow for a SunSpec inverter.
 
 Cloud-connected batteries often report minutes late or a random sample (mine
 said 0.7 kW while it was sending 10 kW to the grid). With battery_derive on,
@@ -272,11 +293,11 @@ amount comes from the live grid meter: solar + grid - estimated house load
 (house_base_load plus the heat pump's own measured power).
 
 Every 10 s it reads the values from Home Assistant. A power value that is older
-than max_age seconds (grid: grid_max_age) or unavailable is reported as 0 W
-(inverter status "sleeping") or as "not implemented", so the heat pump never
-keeps acting on a stale value. Energy counters never go down and count from an
-offset in kWh: the NIBE shows the PV counter as "this month", so set the
-offsets to the counter values on the first day of the month you start.
+than max_age seconds (grid: grid_max_age) or unavailable is reported as 0 W or
+as "not implemented", so the heat pump never keeps acting on a stale value.
+Energy counters never go down and count from an offset in kWh: the NIBE shows
+the PV counter as "this month", so set the offsets to the counter values on
+the first day of the month you start.
 """
 
 import asyncio
@@ -325,7 +346,7 @@ def initial_registers(battery_max_w, battery_wh):
     regs = [0x5375, 0x6E53]  # "SunS"
     regs += [1, 66]
     regs += text("NIBE-HA", 16) + text("Zonneplan PV", 16) + text("", 8)
-    regs += text("0.2.8", 8) + text("HA-PV-0001", 16) + [1, NU16]
+    regs += text("0.3.2", 8) + text("HA-PV-0001", 16) + [1, NU16]
     regs += [103, 50] + inverter_block(0, 0)
     regs += [203, 105] + meter_block(None, [None] * 3, [None] * 3, 0, 0)
     regs += [124, 24] + storage_block(None, None, battery_max_w)
@@ -575,61 +596,164 @@ class Counter:
         return self.value
 
 
+def i32(x):
+    """Two registers, big-endian, signed 32-bit (Huawei I32/U32)."""
+    return acc32(int(round(x)))
+
+
+def huawei_text(s, n):
+    return text(s, n)
+
+
+HW_BASE = 30000      # Huawei SUN2000 register range 30000-47999
+HW_SIZE = 18000
+
+
+def huawei_registers(v, o):
+    """Huawei SUN2000 + LUNA2000 + DTSU666-H smart meter, as {address: [regs]}.
+
+    Huawei's own Modbus map (Solar Inverter Modbus Interface Definitions). The
+    heat pump reads this when the inverter type is set to SUN2000 in menu
+    7.5.12.2, and that type also shows the battery flow. Signs follow Huawei:
+    meter power positive = export, battery power positive = charging.
+    """
+    pv, ac, grid, battery, soc = v["pv"], v["ac"], v["grid"], v["battery"], v["soc"]
+    pw = [p if p is not None else (grid / 3 if grid is not None else 0) for p in v["phase_w"]]
+    pvv = [x if x is not None else VOLT for x in v["phase_v"]]
+    r = {
+        30000: huawei_text("SUN2000-10KTL-M1", 15),        # model name
+        30015: huawei_text("HA0000000001", 10),            # serial number
+        30025: huawei_text("01074871", 10),                # part number
+        30070: [428],                                      # model ID
+        30071: [2], 30072: [2],                            # PV strings, MPP trackers
+        30073: i32(10000), 30075: i32(11000),              # rated / max active power (W)
+        32016: [4000, u16(pv / 400 / 2 * 100)],            # PV1 voltage (0.1 V), current (0.01 A)
+        32018: [4000, u16(pv / 400 / 2 * 100)],            # PV2
+        32064: i32(pv),                                    # input (DC) power, W
+        32066: [u16(pvv[0] * 1.732 * 10), u16(pvv[1] * 1.732 * 10), u16(pvv[2] * 1.732 * 10)],
+        32069: [u16(pvv[0] * 10), u16(pvv[1] * 10), u16(pvv[2] * 10)],  # phase voltages
+        32072: i32(abs(ac) / VOLT / 3 * 1000) * 3,         # phase currents (mA)
+        32080: i32(ac),                                    # active (AC) power, W
+        32082: i32(0),                                     # reactive power
+        32084: [1000],                                     # power factor (0.001)
+        32085: [5000],                                     # grid frequency (0.01 Hz)
+        32086: [9800],                                     # efficiency (0.01 %)
+        32087: [350],                                      # internal temperature (0.1 C)
+        32089: [0x0200 if pv > 0 or abs(ac) > 0 else 0x0002],  # on-grid / standby: no irradiation
+        32106: i32(v["pv_kwh"] * 100),                     # accumulated yield (0.01 kWh)
+        32114: i32(0),                                     # daily yield
+        37000: [2 if battery else 1],                      # battery unit 1: running / standby
+        37001: i32(battery or 0),                          # unit 1 charge/discharge power, W
+        37004: [u16((soc or 0) * 10)],                     # unit 1 SOC (0.1 %)
+        37100: [1 if grid is not None else 0],             # meter status: normal
+        37101: i32(pvv[0] * 10) + i32(pvv[1] * 10) + i32(pvv[2] * 10),  # phase voltages (0.1 V)
+        37107: sum((i32(abs(p) / u * 100) for p, u in zip(pw, pvv)), []),  # currents (0.01 A)
+        37113: i32(-(grid or 0)),                          # active power, + = export
+        37115: i32(0),                                     # reactive power
+        37117: [1000],                                     # power factor
+        37118: [5000],                                     # frequency
+        37119: i32(v["export_kwh"] * 100),                 # exported energy (0.01 kWh)
+        37121: i32(v["import_kwh"] * 100),                 # imported energy (0.01 kWh)
+        37125: [1],                                        # meter type: three-phase
+        37126: i32(pvv[0] * 17.32) + i32(pvv[1] * 17.32) + i32(pvv[2] * 17.32),  # line voltages
+        37132: sum((i32(-p) for p in pw), []),             # phase active power, + = export
+        37138: [1],                                        # meter model detection: matched
+        37758: i32(o["battery_capacity"]),                 # rated capacity, Wh
+        37760: [u16((soc or 0) * 10)],                     # SOC (0.1 %)
+        37762: [2 if battery else 1],                      # running status: running / standby
+        37763: [4000],                                     # bus voltage (0.1 V)
+        37765: i32(battery or 0),                          # charge/discharge power, + = charging
+        37780: i32(0), 37782: i32(0),                      # total charge / discharge
+        37784: i32(0), 37786: i32(0),                      # today's charge / discharge
+        47000: [2],                                        # unit 1 model: HUAWEI-LUNA2000
+        47075: i32(o["battery_max_power"]),                # max charging power, W
+        47077: i32(o["battery_max_power"]),                # max discharging power, W
+        47086: [2],                                        # working mode: max self-consumption
+        47089: [0],                                        # unit 2 model: none
+        47107: [1], 47108: [0],                            # unit 1 installed, unit 2 not
+    }
+    return r
+
+
+def read_values(o, pv_wh, imp_wh, exp_wh):
+    """Everything both protocols need, read from Home Assistant."""
+    battery_max_w = o["battery_max_power"]
+    pv = max(0, min(32767, fresh(o["pv_power"], o["max_age"]) or 0))
+    grid = fresh(o["grid_power"], o["grid_max_age"])
+    soc = fresh(o["battery_soc"], o["battery_max_age"])
+    battery = fresh(o["battery_power"], o["battery_max_age"])
+    if o["battery_derive"]:
+        hp = fresh(o["heat_pump_power"], o["grid_max_age"]) or 0
+        hp *= 1000 if o["heat_pump_power_unit"] == "kW" else 1
+        battery = battery_flow(battery, pv, grid, o["house_base_load"] + hp)
+    if battery is not None:
+        battery = max(-battery_max_w, min(battery_max_w, battery))
+    pv_100 = pv_wh.update(total(o["pv_energy"]))
+    return {
+        "pv": pv, "grid": grid, "soc": soc, "battery": battery,
+        "ac": max(-32767, min(32767, pv - (battery or 0))),
+        "phase_w": [fresh(e, o["grid_max_age"]) for e in o["grid_phase_power"]],
+        "phase_v": [fresh(e, o["grid_max_age"]) for e in o["grid_phase_voltage"]],
+        "pv_100": pv_100, "pv_kwh": pv_100 / 10,
+        "imp_100": imp_wh.update(total(o["grid_import"])),
+        "exp_100": exp_wh.update(total(o["grid_export"])),
+        "import_kwh": imp_wh.value / 10, "export_kwh": exp_wh.value / 10,
+    }
+
+
+def write_sunspec(ctx, v, o):
+    battery_max_w = o["battery_max_power"]
+    ctx[0].setValues(3, INV + 2, inverter_block(v["ac"], v["pv_100"]))
+    ctx[0].setValues(3, MPPT + 2, mppt_block(v["pv"], v["pv_100"], v["battery"]))
+    ctx[0].setValues(3, METER + 2, meter_block(
+        v["grid"], v["phase_w"], v["phase_v"], v["imp_100"], v["exp_100"]))
+    ctx[0].setValues(3, STOR + 2, storage_block(v["soc"], v["battery"], battery_max_w))
+    ctx[0].setValues(3, BATT + 2, battery_block(
+        v["soc"], v["battery"], battery_max_w, o["battery_capacity"]))
+
+
+def write_huawei(ctx, v, o):
+    for addr, regs in huawei_registers(v, o).items():
+        ctx[0].setValues(3, addr, regs)
+
+
 async def updater(ctx, o):
     pv_wh = Counter(o["energy_offset"])
     imp_wh = Counter(o["grid_import_offset"])
     exp_wh = Counter(o["grid_export_offset"])
-    battery_max_w = o["battery_max_power"]
+    write = write_huawei if o["protocol"] == "huawei" else write_sunspec
     last_log = None
+    v = {}
     while True:
-        pv = grid = soc = battery = None
         try:
-            pv = max(0, min(32767, fresh(o["pv_power"], o["max_age"]) or 0))
-            grid = fresh(o["grid_power"], o["grid_max_age"])
-            phase_w = [fresh(e, o["grid_max_age"]) for e in o["grid_phase_power"]]
-            phase_v = [fresh(e, o["grid_max_age"]) for e in o["grid_phase_voltage"]]
-            soc = fresh(o["battery_soc"], o["battery_max_age"])
-            battery = fresh(o["battery_power"], o["battery_max_age"])
-            if o["battery_derive"]:
-                hp = fresh(o["heat_pump_power"], o["grid_max_age"]) or 0
-                hp *= 1000 if o["heat_pump_power_unit"] == "kW" else 1
-                battery = battery_flow(battery, pv, grid, o["house_base_load"] + hp)
-            if battery is not None:
-                battery = max(-battery_max_w, min(battery_max_w, battery))
-            pv_100 = pv_wh.update(total(o["pv_energy"]))
-            ac = max(-32767, min(32767, pv - (battery or 0)))
-            ctx[0].setValues(3, INV + 2, inverter_block(ac, pv_100))
-            ctx[0].setValues(3, MPPT + 2, mppt_block(pv, pv_100, battery))
-            ctx[0].setValues(3, METER + 2, meter_block(
-                grid, phase_w, phase_v,
-                imp_wh.update(total(o["grid_import"])),
-                exp_wh.update(total(o["grid_export"]))))
-            ctx[0].setValues(3, STOR + 2, storage_block(soc, battery, battery_max_w))
-            ctx[0].setValues(3, BATT + 2, battery_block(
-                soc, battery, battery_max_w, o["battery_capacity"]))
+            v = read_values(o, pv_wh, imp_wh, exp_wh)
+            write(ctx, v, o)
         except Exception as err:  # noqa: BLE001 - never let the loop die
             print(f"Update failed ({err!r})")
         now = dt.datetime.now()
         if now.minute % 5 == 0 and last_log != now.strftime("%H:%M"):
             last_log = now.strftime("%H:%M")
-            print(f"{last_log} PV {pv} W ({pv_wh.value / 10:.1f} kWh), grid {grid} W "
+            print(f"{last_log} PV {v.get('pv')} W ({pv_wh.value / 10:.1f} kWh), grid {v.get('grid')} W "
                   f"(import {imp_wh.value / 10:.1f} / export {exp_wh.value / 10:.1f} kWh), "
-                  f"battery {soc}% {battery} W")
+                  f"battery {v.get('soc')}% {v.get('battery')} W")
         await asyncio.sleep(10)
 
 
 async def main():
     with open("/data/options.json") as f:
         opts = json.load(f)
-    # pymodbus adds 1 to every address (get and set), so the block starts at
-    # 40001 to put "SunS" at protocol address 40000.
-    block = (LoggingBlock if opts.get("log_requests") else ModbusSequentialDataBlock)(
-        BASE + 1, initial_registers(opts["battery_max_power"], opts["battery_capacity"]))
+    block_cls = LoggingBlock if opts.get("log_requests") else ModbusSequentialDataBlock
+    # pymodbus adds 1 to every address (get and set), so a block starts one
+    # higher than the first protocol address it serves.
+    if opts["protocol"] == "huawei":
+        block = block_cls(HW_BASE + 1, [0] * HW_SIZE)
+    else:
+        block = block_cls(BASE + 1, initial_registers(opts["battery_max_power"], opts["battery_capacity"]))
     slave = ModbusSlaveContext(hr=block, ir=block)
     ctx = (LoggingContext if opts.get("log_requests") else ModbusServerContext)(
         slaves=slave, single=True)
     asyncio.create_task(updater(ctx, opts))
-    print(f"SunSpec on port {opts['port']}: inverter {opts['pv_power']}, "
+    print(f"{opts['protocol']} on port {opts['port']}: inverter {opts['pv_power']}, "
           f"meter {opts['grid_power']}, battery {opts['battery_soc']}")
     await StartAsyncTcpServer(context=ctx, address=("0.0.0.0", opts["port"]))
 
@@ -643,39 +767,46 @@ if __name__ == "__main__":
 1. Go to **Settings → Add-ons → Add-on store**, open the ⋮ menu and choose **Check for updates**. "SunSpec emulator" appears under **Local add-ons**.
 2. Install it, then open the **Configuration** tab and fill in your entity IDs.
 3. Set the three offsets. The NIBE shows the solar counter as "this month", so use the counter values on the first day of the current month (the Home Assistant history or statistics will give you those). Leave them at 0 if you don't care about the monthly number.
-4. Set `battery_max_power` to your battery's maximum charge power in W.
+4. Set `battery_max_power` to your battery's maximum charge power in W and `battery_capacity` to its capacity in Wh. Keep `protocol: huawei` if you have a battery; `sunspec` works too, but then the heat pump never shows the battery.
 5. Start the add-on. The log shows one line every 5 minutes with the values it serves.
 
 ### 3. Check it before the heat pump does
 
-From any computer on your network, the official SunSpec client should find all five models with your current values:
+From any computer on your network, read a few of the Huawei registers back:
 
 ```python
-# pip install pysunspec2
-import sunspec2.modbus.client as client
+# pip install pymodbus
+from pymodbus.client import ModbusTcpClient
 
-d = client.SunSpecModbusClientDeviceTCP(slave_id=1, ipaddr="192.168.1.10", ipport=502)
-d.scan()
-print([m for m in d.models if isinstance(m, int)])   # [1, 103, 203, 124, 160]
-inv = d.models[103][0]; inv.read(); print("PV", inv.W.cvalue, "W")
-m = d.models[203][0]; m.read(); print("grid", m.W.cvalue, "W")
-d.close()
+c = ModbusTcpClient("192.168.1.10", port=502)
+c.connect()
+
+def i32(addr):
+    hi, lo = c.read_holding_registers(addr, count=2, slave=1).registers
+    x = (hi << 16) | lo
+    return x - (1 << 32) if x >= 1 << 31 else x
+
+print("AC power ", i32(32080), "W")
+print("grid     ", i32(37113), "W  (+ = export)")
+print("battery  ", i32(37765), "W  (+ = charging)")
+print("SoC      ", c.read_holding_registers(37760, count=1, slave=1).registers[0] / 10, "%")
+c.close()
 ```
 
 ### 4. Set up the NIBE
 
 - **7.5.12.1**: turn on **Modbus PV**.
-- **7.5.12.2**: **Add inverter**, type **SunSpec**, the IP of your Home Assistant host, port **502**, unit ID **1**. After a minute the PV screen shows production, and **Energy supply** shows sun, grid, house and battery.
+- **7.5.12.2**: **Add inverter**, type **Huawei Sun2000**, the IP of your Home Assistant host, port **502**, unit ID **1**. Then press **Identify smart meter**; both the inverter and the smart meter should show **Connected**. After a minute **Energy supply** shows sun, grid, house, heat pump and battery.
 - **4.2.2 Solar energy**: choose what solar may affect (I only use hot water), set **heat source** to *compressor only*, and set the **energy meter** to *smart meter* so the heat pump looks at real export instead of all production.
 - **Don't** turn on the EME 20 accessory (Modbus register 44001). The heat pump will look for the physical module and raise a communication alarm.
 
 ### Troubleshooting
 
-- **Set `log_requests: true`** to log every register range and unit ID the heat pump reads. That's how I found out it wanted model 160.
-- **The sun shows "no flow"** while production is fine: the heat pump treats the device as a hybrid inverter and reads PV from model 160. Make sure that model is in the chain (it is in the code above).
-- **Grid export with no visible source** (sun, house and battery all "no flow" while the battery discharges): a hybrid inverter's AC output includes the battery, so model 103 must report PV minus battery power. The code above does that.
+- **Set `log_requests: true`** to log every register range and unit ID the heat pump reads. That's how I found out what it wanted, every time.
+- **The sun shows the battery's power, and there is no battery icon**: the heat pump doesn't believe there's a battery. 47000 must be 2 (LUNA2000) and 47107 must be 1 (installed); the code above sets both.
 - **House shows "no flow" while the battery is busy**: your battery value is late or wrong. Keep `battery_derive: true` and set `house_base_load` to your typical base load and `heat_pump_power` to the heat pump's own power sensor.
 - **Values freeze or drop to 0**: the add-on reports 0 W when a sensor is older than `max_age`. Some integrations don't report unchanged values; that's why the battery has its own, longer `battery_max_age`.
+- **Using `protocol: sunspec`** (no battery, or another reason): the heat pump treats the device as a hybrid inverter and needs model 160 for PV, and model 103 must report PV minus battery power. The code does both, but it will never draw the battery flow.
 
 ## Caveats
 
