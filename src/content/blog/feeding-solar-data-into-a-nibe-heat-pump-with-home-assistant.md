@@ -47,7 +47,7 @@ The add-on config is short. `host_network` makes port 502 reachable on the Home 
 
 ```yaml
 name: SunSpec emulator
-version: "0.2.3"
+version: "0.2.4"
 slug: sunspec_emulator
 arch:
   - amd64
@@ -92,6 +92,8 @@ What helped was logging every read request in the add-on. The log showed exactly
 
 With a storage model present, the NIBE treats the device as a **hybrid inverter**. Hybrid inverters report the panels separately in model 160 (DC power per MPPT string), and that block was missing. I added it at the end of the chain, so the meter and battery kept their addresses, and the sun came back.
 
+The same day it bit me a second time. In the evening the battery was selling about 11 kW to the grid, and the NIBE showed 5.4 kW of export coming from nowhere: sun, house and battery all "no flow". A hybrid inverter's AC output includes the battery, so model 103 has to report PV minus battery power, not PV alone. With that, the heat pump works out the battery flow and the house load itself.
+
 ## Why the grid comes from the YouLess, not Zonneplan
 
 Zonneplan also reports grid power from its own P1 dongle, and all Zonneplan values update in the same batch. That sounds like the cleanest source, so I tested it against a week of history. At every battery update, I computed house consumption as solar + grid − battery:
@@ -135,7 +137,7 @@ Create a folder `sunspec_emulator` in the local add-ons folder of your Home Assi
 
 ```yaml
 name: SunSpec emulator
-version: "0.2.3"
+version: "0.2.4"
 slug: sunspec_emulator
 description: >-
   Serves solar production, a grid meter and a home battery from Home Assistant
@@ -239,6 +241,12 @@ battery behind a single unit ID, the way a SolarEdge with a meter does:
            shows "no flow")
     40285  end marker 0xFFFF, 0
 
+Because of the storage model, the heat pump treats the device as a hybrid
+inverter: it takes solar production from model 160 (DC side) and the
+inverter's AC output from model 103. A hybrid inverter's AC output includes
+the battery, so model 103 reports PV minus battery power (positive = charging);
+the heat pump derives the battery flow and the house load from that.
+
 Every 10 s it reads the values from Home Assistant. A power value that is older
 than max_age seconds (grid: grid_max_age) or unavailable is reported as 0 W
 (inverter status "sleeping") or as "not implemented", so the heat pump never
@@ -292,7 +300,7 @@ def initial_registers(battery_max_w):
     regs = [0x5375, 0x6E53]  # "SunS"
     regs += [1, 66]
     regs += text("NIBE-HA", 16) + text("Zonneplan PV", 16) + text("", 8)
-    regs += text("0.2.3", 8) + text("HA-PV-0001", 16) + [1, NU16]
+    regs += text("0.2.4", 8) + text("HA-PV-0001", 16) + [1, NU16]
     regs += [103, 50] + inverter_block(0, 0)
     regs += [203, 105] + meter_block(None, [None] * 3, [None] * 3, 0, 0)
     regs += [124, 24] + storage_block(None, None, battery_max_w)
@@ -303,8 +311,9 @@ def initial_registers(battery_max_w):
 
 
 def inverter_block(watt, wh_100):
-    """Model 103. wh_100 = lifetime energy in units of 100 Wh."""
-    amp = watt / VOLT / 3
+    """Model 103. watt = AC output (PV minus battery charging, may be negative),
+    wh_100 = lifetime PV energy in units of 100 Wh."""
+    amp = abs(watt) / VOLT / 3
     b = [0] * 50
     b[0] = u16(amp * 3 * 100)             # A
     b[1] = b[2] = b[3] = u16(amp * 100)   # AphA/B/C
@@ -321,7 +330,7 @@ def inverter_block(watt, wh_100):
     b[25], b[26], b[27], b[28] = NU16, NI16, NU16, NI16  # DCA/DCV
     b[29] = u16(watt)                     # DCW
     b[31] = b[32] = b[33] = b[34] = b[35] = NI16  # temperatures
-    b[36] = ST_MPPT if watt > 0 else ST_SLEEPING
+    b[36] = ST_MPPT if watt != 0 else ST_SLEEPING
     b[37] = NU16                          # StVnd
     return b
 
@@ -499,7 +508,8 @@ async def updater(ctx, o):
             soc = fresh(o["battery_soc"], o["battery_max_age"])
             battery = fresh(o["battery_power"], o["battery_max_age"])
             pv_100 = pv_wh.update(total(o["pv_energy"]))
-            ctx[0].setValues(3, INV + 2, inverter_block(pv, pv_100))
+            ac = max(-32767, min(32767, pv - (battery or 0)))
+            ctx[0].setValues(3, INV + 2, inverter_block(ac, pv_100))
             ctx[0].setValues(3, MPPT + 2, mppt_block(pv, pv_100))
             ctx[0].setValues(3, METER + 2, meter_block(
                 grid, phase_w, phase_v,
@@ -572,6 +582,7 @@ d.close()
 
 - **Set `log_requests: true`** to log every register range and unit ID the heat pump reads. That's how I found out it wanted model 160.
 - **The sun shows "no flow"** while production is fine: the heat pump treats the device as a hybrid inverter and reads PV from model 160. Make sure that model is in the chain (it is in the code above).
+- **Grid export with no visible source** (sun, house and battery all "no flow" while the battery discharges): a hybrid inverter's AC output includes the battery, so model 103 must report PV minus battery power. The code above does that.
 - **Values freeze or drop to 0**: the add-on reports 0 W when a sensor is older than `max_age`. Some integrations don't report unchanged values; that's why the battery has its own, longer `battery_max_age`.
 
 ## Caveats
