@@ -1,5 +1,13 @@
 name = "martijnrusschen-nl"
 compatibility_date = "2025-06-01"
+workers_dev = true
+
+# Custom domains (zone martijnrusschen.nl on the Russchen Media account since
+# 28-10-2026). Cloudflare creates the DNS records for these itself.
+routes = [
+  { pattern = "martijnrusschen.nl", custom_domain = true },
+  { pattern = "www.martijnrusschen.nl", custom_domain = true },
+]
 
 # Static site via Cloudflare Workers Static Assets, like russchenmedia. No
 # Worker code: Cloudflare serves dist/ directly. Headers live in
