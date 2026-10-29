@@ -48,7 +48,7 @@ The add-on config is short. `host_network` makes port 502 reachable on the Home 
 
 ```yaml
 name: SunSpec emulator
-version: "0.3.2"
+version: "0.3.4"
 slug: sunspec_emulator
 arch:
   - amd64
@@ -160,7 +160,7 @@ Create a folder `sunspec_emulator` in the local add-ons folder of your Home Assi
 
 ```yaml
 name: SunSpec emulator
-version: "0.3.2"
+version: "0.3.4"
 slug: sunspec_emulator
 description: >-
   Serves solar production, a grid meter and a home battery from Home Assistant
@@ -206,6 +206,7 @@ options:
   battery_max_power: 11000
   battery_capacity: 10000
   battery_derive: true
+  hide_battery_export: true
   house_base_load: 750
   heat_pump_power: sensor.heat_pump_power
   heat_pump_power_unit: W
@@ -236,6 +237,7 @@ schema:
   battery_max_power: int
   battery_capacity: int
   battery_derive: bool
+  hide_battery_export: bool
   house_base_load: int
   heat_pump_power: str
   heat_pump_power_unit: list(W|kW)
@@ -298,6 +300,10 @@ as "not implemented", so the heat pump never keeps acting on a stale value.
 Energy counters never go down and count from an offset in kWh: the NIBE shows
 the PV counter as "this month", so set the offsets to the counter values on
 the first day of the month you start.
+
+With hide_battery_export on, the part of a discharging battery that goes to the
+grid is taken out of both the battery and the grid: the heat pump counts any
+export as solar surplus, and a trading battery selling to the grid is not.
 """
 
 import asyncio
@@ -346,7 +352,7 @@ def initial_registers(battery_max_w, battery_wh):
     regs = [0x5375, 0x6E53]  # "SunS"
     regs += [1, 66]
     regs += text("NIBE-HA", 16) + text("Zonneplan PV", 16) + text("", 8)
-    regs += text("0.3.2", 8) + text("HA-PV-0001", 16) + [1, NU16]
+    regs += text("0.3.4", 8) + text("HA-PV-0001", 16) + [1, NU16]
     regs += [103, 50] + inverter_block(0, 0)
     regs += [203, 105] + meter_block(None, [None] * 3, [None] * 3, 0, 0)
     regs += [124, 24] + storage_block(None, None, battery_max_w)
@@ -584,6 +590,20 @@ class LoggingContext(ModbusServerContext):
         return super().__getitem__(slave)
 
 
+class WriteLoggingSlave(ModbusSlaveContext):
+    """Logs every write from a client (the heat pump trying to change a
+    setting). The add-on's own updates set `internal` and are not logged.
+    Client writes are accepted but overwritten on the next update, so they
+    have no effect."""
+
+    internal = False
+
+    def setValues(self, fc_as_hex, address, values):
+        if not self.internal:
+            print(f"WRITE fc{fc_as_hex} {address}..{address + len(values) - 1}: {list(values)}")
+        return super().setValues(fc_as_hex, address, values)
+
+
 class Counter:
     """Energy counter in 100 Wh, counting from an offset in kWh, never down."""
 
@@ -675,6 +695,20 @@ def huawei_registers(v, o):
     return r
 
 
+def hide_export(battery, grid, phase_w):
+    """Take the part of a discharging battery that goes to the grid out of
+    both the battery and the grid. The heat pump counts any export as solar
+    surplus; when a trading battery sells to the grid, that is not surplus.
+    The house load stays the same. Returns (battery, grid, phase_w)."""
+    if battery is None or grid is None or battery >= 0 or grid >= 0:
+        return battery, grid, phase_w
+    to_grid = min(-battery, -grid)
+    new_grid = grid + to_grid
+    scale = new_grid / grid
+    phase_w = [p * scale if p is not None else None for p in phase_w]
+    return battery + to_grid, new_grid, phase_w
+
+
 def read_values(o, pv_wh, imp_wh, exp_wh):
     """Everything both protocols need, read from Home Assistant."""
     battery_max_w = o["battery_max_power"]
@@ -688,11 +722,14 @@ def read_values(o, pv_wh, imp_wh, exp_wh):
         battery = battery_flow(battery, pv, grid, o["house_base_load"] + hp)
     if battery is not None:
         battery = max(-battery_max_w, min(battery_max_w, battery))
+    phase_w = [fresh(e, o["grid_max_age"]) for e in o["grid_phase_power"]]
+    if o["hide_battery_export"]:
+        battery, grid, phase_w = hide_export(battery, grid, phase_w)
     pv_100 = pv_wh.update(total(o["pv_energy"]))
     return {
         "pv": pv, "grid": grid, "soc": soc, "battery": battery,
         "ac": max(-32767, min(32767, pv - (battery or 0))),
-        "phase_w": [fresh(e, o["grid_max_age"]) for e in o["grid_phase_power"]],
+        "phase_w": phase_w,
         "phase_v": [fresh(e, o["grid_max_age"]) for e in o["grid_phase_voltage"]],
         "pv_100": pv_100, "pv_kwh": pv_100 / 10,
         "imp_100": imp_wh.update(total(o["grid_import"])),
@@ -727,7 +764,11 @@ async def updater(ctx, o):
     while True:
         try:
             v = read_values(o, pv_wh, imp_wh, exp_wh)
-            write(ctx, v, o)
+            ctx[0].internal = True
+            try:
+                write(ctx, v, o)
+            finally:
+                ctx[0].internal = False
         except Exception as err:  # noqa: BLE001 - never let the loop die
             print(f"Update failed ({err!r})")
         now = dt.datetime.now()
@@ -749,7 +790,7 @@ async def main():
         block = block_cls(HW_BASE + 1, [0] * HW_SIZE)
     else:
         block = block_cls(BASE + 1, initial_registers(opts["battery_max_power"], opts["battery_capacity"]))
-    slave = ModbusSlaveContext(hr=block, ir=block)
+    slave = WriteLoggingSlave(hr=block, ir=block)
     ctx = (LoggingContext if opts.get("log_requests") else ModbusServerContext)(
         slaves=slave, single=True)
     asyncio.create_task(updater(ctx, opts))
@@ -810,7 +851,7 @@ c.close()
 
 ## Caveats
 
-- **Battery trading looks like surplus.** When Zonneplan sells battery energy to the grid, the NIBE sees export and may heat water with battery power. I'm watching how often that happens. If needed, the add-on can subtract battery discharge from the export it reports.
+- **Battery trading looks like surplus.** The morning after, the logs showed it: at 8:24 Zonneplan was selling the battery to the grid at 10 kW, with 300 W of sun, and the heat pump switched to "surplus" and heated hot water for an hour and a half, ending up on grid power. It counts any export as solar surplus, even when it knows the power comes from the battery. So the add-on now takes the part of the battery that goes to the grid out of both the battery and the grid (`hide_battery_export`). Real solar surplus still shows; battery trading no longer does, which also means you don't see it on the heat pump's screen.
 - **The NIBE needs a fixed IP.** Give your Home Assistant host a DHCP reservation.
 - **Undocumented territory.** The PV operating mode register (30580) shows values like 10 and 40 that NIBE doesn't document. They look like the SG Ready levels times ten. And none of this is supported by NIBE, so test carefully.
 
