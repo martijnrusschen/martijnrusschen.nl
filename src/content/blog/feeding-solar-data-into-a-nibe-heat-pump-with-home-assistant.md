@@ -48,7 +48,7 @@ The add-on config is short. `host_network` makes port 502 reachable on the Home 
 
 ```yaml
 name: SunSpec emulator
-version: "0.3.4"
+version: "0.3.5"
 slug: sunspec_emulator
 arch:
   - amd64
@@ -160,7 +160,7 @@ Create a folder `sunspec_emulator` in the local add-ons folder of your Home Assi
 
 ```yaml
 name: SunSpec emulator
-version: "0.3.4"
+version: "0.3.5"
 slug: sunspec_emulator
 description: >-
   Serves solar production, a grid meter and a home battery from Home Assistant
@@ -352,7 +352,7 @@ def initial_registers(battery_max_w, battery_wh):
     regs = [0x5375, 0x6E53]  # "SunS"
     regs += [1, 66]
     regs += text("NIBE-HA", 16) + text("Zonneplan PV", 16) + text("", 8)
-    regs += text("0.3.4", 8) + text("HA-PV-0001", 16) + [1, NU16]
+    regs += text("0.3.5", 8) + text("HA-PV-0001", 16) + [1, NU16]
     regs += [103, 50] + inverter_block(0, 0)
     regs += [203, 105] + meter_block(None, [None] * 3, [None] * 3, 0, 0)
     regs += [124, 24] + storage_block(None, None, battery_max_w)
@@ -552,14 +552,19 @@ def total(entity_ids):
 
 def battery_flow(cloud, pv, grid, house):
     """Battery power (positive = charging) from the live grid meter, with the
-    cloud value only deciding the direction. None if there is nothing to go on."""
+    cloud value deciding the direction. Exception: export larger than solar
+    production can only come from the battery, whatever the cloud says (it
+    lags), so then the battery counts as discharging. None if there is
+    nothing to go on."""
+    derived = pv + grid - house if grid is not None else None
+    if derived is not None and grid < 0 and -grid > pv + 500:
+        return min(0.0, derived)
     if cloud is None:
         return None
     if abs(cloud) < 200:
         return 0.0
-    if grid is None:
+    if derived is None:
         return cloud
-    derived = pv + grid - house
     return max(0.0, derived) if cloud > 0 else min(0.0, derived)
 
 
@@ -851,7 +856,7 @@ c.close()
 
 ## Caveats
 
-- **Battery trading looks like surplus.** The morning after, the logs showed it: at 8:24 Zonneplan was selling the battery to the grid at 10 kW, with 300 W of sun, and the heat pump switched to "surplus" and heated hot water for an hour and a half, ending up on grid power. It counts any export as solar surplus, even when it knows the power comes from the battery. So the add-on now takes the part of the battery that goes to the grid out of both the battery and the grid (`hide_battery_export`). Real solar surplus still shows; battery trading no longer does, which also means you don't see it on the heat pump's screen.
+- **Battery trading looks like surplus.** The morning after, the logs showed it: at 8:24 Zonneplan was selling the battery to the grid at 10 kW, with 300 W of sun, and the heat pump switched to "surplus" and heated hot water for an hour and a half, ending up on grid power. It counts any export as solar surplus, even when it knows the power comes from the battery. So the add-on now takes the part of the battery that goes to the grid out of both the battery and the grid (`hide_battery_export`). Real solar surplus still shows; battery trading no longer does, which also means you don't see it on the heat pump's screen. Because the cloud lags, the add-on also treats any export larger than the solar production as battery discharge, whatever the cloud says: that power can't come from anywhere else.
 - **The NIBE needs a fixed IP.** Give your Home Assistant host a DHCP reservation.
 - **Undocumented territory.** The PV operating mode register (30580) shows values like 10 and 40 that NIBE doesn't document. They look like the SG Ready levels times ten. And none of this is supported by NIBE, so test carefully.
 
